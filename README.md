@@ -34,6 +34,31 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
    traders, `H` for medkit. Colonist outposts also run a commodity exchange.
 7. Press `R` near your landed ship to take off again.
 
+## Galaxy Map
+- Press `TAB` in space to open the **galaxy map**: 3 star systems, 9 bodies —
+  Orion Reach (Orion Station, Terra Prime, Verdant), Krell Expanse (Krell
+  Depot, Krell Prime, Ashfall) and Novara Spur (Novara Gate, Novara, Umbra).
+- Click **JUMP** for a direct hyperjump to any body's arrival pad — no
+  stargates, no scanning required. Blocked while hostiles are within 700u.
+
+## Stations: Equipment · Market · Missions
+- **EQUIPMENT** — medkits, the five ship upgrades, and the **module bay**:
+  buy modules (Cargo Pod +20 hold, Retrieval Beam ore magnet, Passenger
+  Module, EMP Emitter, Turret Array +6 dmg), install up to 3 slots,
+  uninstall back to the ship's module hold (5 spare max), or sell spares.
+- **MARKET** — sell raw cargo + the commodity exchange. **Procedural
+  economy:** every visit reshuffles all market prices (±15% around their
+  base spread), so trade routes stay profitable but no two visits price
+  the same. Terra, Verdant & Novara colonists trade too.
+- **MISSIONS** — the station lounge spawns 3 random NPCs per visit offering
+  procedurally generated contracts:
+  - **Cargo delivery** — buy/haul goods to a destination market
+  - **Passenger ferry** — requires the Passenger Module installed
+  - **Pirate bounty** — destroy N Void Raiders
+  - **EMP disable** — non-lethal: fit the EMP Emitter, press `F` to pulse
+    (280u radius) and disable raiders without killing them
+  3 contracts max; completion pays automatically on arrival / kill / disable.
+
 ## Quick Travel
 - Fully scan a planet or station (lock ring completes) and a prompt appears:
   **press `Q` to warp** straight to it — twin-engine spool, speed streaks, synced

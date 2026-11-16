@@ -5,9 +5,11 @@
 
   const S = {
     ready: false, active: false,
-    nearPlanet: -1, nearStation: false, landPrompt: '',
+    nearPlanet: -1, nearStation: false, nearStationIdx: -1, landPrompt: '',
     stats: { speed: 0 },
     planetMeshes: [],
+    stations: [],
+    empCD: 0, empPulses: [],
 
     init(canvas){
       if(this.ready) return;
@@ -38,7 +40,7 @@
         this.scene.add(l);
       }
       this._buildStars();
-      this._buildStation();
+      this.buildStations();
       this._buildShip();
       this._buildPlanets();
       this.asteroids = [];
@@ -261,7 +263,7 @@
       this.scene.add(new THREE.Points(g, m));
     },
 
-    _buildStation(){
+    _buildStation(def, idx){
       const grp = new THREE.Group();
       const hullMat = new THREE.MeshStandardMaterial({ color: 0x8fa3b8, roughness: 0.55, metalness: 0.6 });
       const glowMat = new THREE.MeshBasicMaterial({ color: 0x5ff0ff });
@@ -279,9 +281,83 @@
         lamp.position.set(Math.cos(i * Math.PI / 2) * 70, Math.sin(i * Math.PI / 2) * 70, 0);
         grp.add(lamp);
       }
-      grp.position.set(0, 0, 0);
-      this.station = grp;
+      // enhanced visuals: counter-rotating outer ring, blinking docking strobes
+      // and a cyan bay light so stations read as lively hubs from any distance
+      const ring2 = new THREE.Mesh(new THREE.TorusGeometry(96, 2.4, 8, 48), glowMat);
+      grp.add(ring2);
+      const strobeMat = new THREE.MeshBasicMaterial({ color: 0xffd25f, transparent: true, opacity: 1 });
+      const strobes = [];
+      for(let i = 0; i < 6; i++){
+        const st = new THREE.Mesh(new THREE.SphereGeometry(1.8, 6, 6), strobeMat.clone());
+        st.position.set(Math.cos(i * Math.PI / 3) * 96, Math.sin(i * Math.PI / 3) * 96, 0);
+        grp.add(st);
+        strobes.push(st);
+      }
+      const bayLight = new THREE.PointLight(0x5ff0ff, 0.8, 420, 1.6);
+      bayLight.position.set(0, 0, 40);
+      grp.add(bayLight);
+      grp.position.set(def.pos[0], def.pos[1], def.pos[2]);
+      this.stations.push({ grp, def, ring2, strobes, idx });
       this.scene.add(grp);
+    },
+
+    buildStations(){
+      this.stations = [];
+      for(let i = 0; i < window.STATIONS.length; i++) this._buildStation(window.STATIONS[i], i);
+    },
+
+    // Galaxy map direct travel: teleport to the pad of any station/planet.
+    jumpTo(kind, idx){
+      let pos, name;
+      if(kind === 'station'){
+        const st = this.stations[idx];
+        if(!st) return false;
+        pos = st.grp.position.clone(); name = st.def.name;
+      } else {
+        const pm = this.planetMeshes[idx], d = window.PLANETS[idx];
+        if(!pm || !d) return false;
+        pos = pm.position.clone(); name = d.name;
+      }
+      const dir = this.ship.position.clone().sub(pos);
+      if(dir.length() < 1) dir.set(0, 0, 1);
+      dir.normalize();
+      const pad = kind === 'station' ? 130 : window.PLANETS[idx].size + 55;
+      this.ship.position.copy(pos).addScaledVector(dir, pad);
+      // face the body like a fresh arrival (ship fwd is -Z)
+      this.ship.quaternion.setFromUnitVectors(V3(0, 0, -1),
+        pos.clone().sub(this.ship.position).normalize());
+      this.vel.set(0, 0, 0);
+      this.warp = null; this.locked = false; this.lockT = 0; this.hover = null; this.hoverId = null;
+      this.thrustS = 0.4; this.camPos = null;
+      for(let i = 0; i < 10; i++) this._emitTrail(0, 1, 60);
+      return true;
+    },
+
+    // EMP emitter [F]: expanding non-lethal pulse that disables raiders in range.
+    _fireEMP(){
+      if(!window.PD.hasModule('emp')) return;
+      this.empCD = 8;
+      window.GameAudio.emp();
+      window.Game.uiToast('⚡ EMP PULSE — raiders disabled');
+      const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1, 0.09, 8, 40),
+        new THREE.MeshBasicMaterial({ color: 0x7ff0ff, transparent: true, opacity: 0.95, depthWrite: false })
+      );
+      ring.position.copy(this.ship.position);
+      ring.quaternion.setFromUnitVectors(V3(0, 1, 0), fwd);
+      this.empPulses.push({ mesh: ring, r: 6 });
+      this.scene.add(ring);
+      let hits = 0;
+      for(const e of this.pirates){
+        if(e.mesh.position.distanceTo(this.ship.position) < 280 && !e.disabledT){
+          e.disabledT = 12;
+          e.vel.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(60);
+          hits++;
+          if(window.Game.onPirateDisable) window.Game.onPirateDisable();
+        }
+      }
+      if(hits) window.Game.uiToast('✦ ' + hits + ' raider' + (hits > 1 ? 's' : '') + ' disabled — non-lethal');
     },
 
     _buildShip(){
@@ -490,11 +566,19 @@
         }
         // fully scanned planet/station => quick travel target
         if(this.locked && (hover.type === 'planet' || hover.type === 'station')){
-          const idx = hover.type === 'planet' ? parseInt(hover.id.slice(2), 10) : -1;
-          const base = hover.type === 'planet' ? this.planetMeshes[idx].position : V3(0, 0, 0);
-          const pad = hover.type === 'planet' ? window.PLANETS[idx].size + 55 : 130;
+          let idx, base, pad;
+          if(hover.type === 'planet'){
+            idx = parseInt(hover.id.slice(2), 10);
+            base = this.planetMeshes[idx].position;
+            pad = window.PLANETS[idx].size + 55;
+          } else {
+            idx = parseInt(hover.id.slice(1), 10);
+            base = this.stations[idx].grp.position;
+            pad = 130;
+          }
           const dirFrom = this.ship.position.clone().sub(base).normalize();
-          this.warpTo = { pos: base.clone().addScaledVector(dirFrom, pad), name: hover.name, planetIdx: idx };
+          this.warpTo = { pos: base.clone().addScaledVector(dirFrom, pad), name: hover.name,
+            kind: hover.type, idx };
           this.warpPrompt = 'Press <b>Q</b> to quick-travel to <b>' + hover.name + '</b>';
         } else {
           this.warpTo = null;
@@ -801,6 +885,7 @@
                   PD.credits += bounty;
                   window.Game.uiToast('+' + bounty + ' CR bounty');
                   PD.save();
+                  if(window.Game.onPirateKill) window.Game.onPirateKill(true);
                   this.scene.remove(e.mesh);
                   this.pirates.splice(p, 1);
                 }
@@ -830,7 +915,7 @@
         o.vel.multiplyScalar(1 - 0.5 * dt);
         o.mesh.rotation.x += dt; o.mesh.rotation.y += dt * 1.4;
         if(o.life <= 0){ this.scene.remove(o.mesh); this.oreDrops.splice(i, 1); continue; }
-        if(o.mesh.position.distanceTo(this.ship.position) < 26){
+        if(o.mesh.position.distanceTo(this.ship.position) < PD.scoopRadius()){
           const got = PD.addItem('ore', 1);
           if(got > 0){
             window.GameAudio.pickup();
@@ -850,6 +935,18 @@
         if(Math.random() < 0.65) this._spawnPirate();
       }
       for(const e of this.pirates){
+        // disabled raiders (EMP) drift away and can't fire — non-lethal takedown
+        if(e.disabledT > 0){
+          e.disabledT -= dt;
+          const away = e.mesh.position.clone().sub(this.ship.position).normalize();
+          e.mesh.position.addScaledVector(away, 42 * dt);
+          e.mesh.lookAt(this.ship.position);
+          const dblink = 0.35 + 0.65 * Math.abs(Math.sin(t * 18));
+          if(e.beacon) e.beacon.material.opacity = dblink;
+          if(e.halo) e.halo.material.opacity = 0.05 + dblink * 0.15;
+          if(e.plight) e.plight.intensity = 0.2 + dblink * 0.4;
+          continue;
+        }
         const toShip = this.ship.position.clone().sub(e.mesh.position);
         const dist = toShip.length();
         toShip.normalize();
@@ -869,8 +966,25 @@
         }
       }
 
-      // station drift
-      this.station.rotation.y += dt * 0.12;
+      // EMP emitter input + cooldown + expanding pulse rings
+      this.empCD -= dt;
+      if(!this.warp && this.empCD <= 0 && inp.pressed('KeyF') && PD.hasModule('emp')) this._fireEMP();
+      for(let i = this.empPulses.length - 1; i >= 0; i--){
+        const ep = this.empPulses[i];
+        ep.r += 520 * dt;
+        ep.mesh.scale.setScalar(ep.r);
+        ep.mesh.material.opacity = Math.max(0, 0.95 * (1 - ep.r / 300));
+        if(ep.r >= 300){ this.scene.remove(ep.mesh); this.empPulses.splice(i, 1); }
+      }
+
+      // station drift: spin hubs, counter-rotate outer rings, blink strobes
+      for(const st of this.stations){
+        st.grp.rotation.y += dt * 0.12;
+        if(st.ring2) st.ring2.rotation.z += dt * 0.25;
+        for(let i = 0; i < st.strobes.length; i++){
+          st.strobes[i].material.opacity = Math.sin(t * 5 + i * 1.05) > 0.55 ? 1 : 0.12;
+        }
+      }
       for(const pm of this.planetMeshes){
         pm.rotation.y += dt * 0.01;
         if(pm.userData.clouds) pm.userData.clouds.rotation.y += dt * 0.022;
@@ -903,6 +1017,7 @@
       // proximity prompts
       this.nearPlanet = -1;
       this.nearStation = false;
+      this.nearStationIdx = -1;
       this.landPrompt = '';
       const defs = window.PLANETS;
       for(let i = 0; i < this.planetMeshes.length; i++){
@@ -913,9 +1028,15 @@
           break;
         }
       }
-      if(this.ship.position.length() < 160){
-        this.nearStation = true;
-        this.landPrompt = 'Press <b>E</b> to dock at <b>ORION STATION</b>';
+      if(this.nearPlanet < 0){
+        for(let i = 0; i < this.stations.length; i++){
+          if(this.ship.position.distanceTo(this.stations[i].grp.position) < 160){
+            this.nearStation = true;
+            this.nearStationIdx = i;
+            this.landPrompt = 'Press <b>E</b> to dock at <b>' + this.stations[i].def.name + '</b>';
+            break;
+          }
+        }
       }
 
       // player death
@@ -974,11 +1095,12 @@
           name: d.name, kind: d.type.toUpperCase() + ' WORLD', value: 'LANDING SITE', dist,
           size: radToSize(d.size, dist) });
       }
-      if(this.station){
-        const dist = this.station.position.distanceTo(this.ship.position);
-        v.copy(this.station.position).project(this.camera);
-        if(v.z < 1) out.push({ id: 'station', x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station',
-          name: 'ORION STATION', kind: 'TRADE HUB', value: 'DOCK · TRADE · UPGRADE', dist,
+      for(let i = 0; i < this.stations.length; i++){
+        const st = this.stations[i];
+        const dist = st.grp.position.distanceTo(this.ship.position);
+        v.copy(st.grp.position).project(this.camera);
+        if(v.z < 1) out.push({ id: 's' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station',
+          name: st.def.name, kind: st.def.system, value: 'DOCK · TRADE · MISSIONS', dist,
           size: radToSize(70, dist) });
       }
       return out;

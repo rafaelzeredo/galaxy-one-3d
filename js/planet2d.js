@@ -16,8 +16,12 @@
     peaceful: { base: '#3a5f3a', patch1: '#44693f', patch2: '#334f33', sand: '#8a7d55', water: '#2e5a70', tint: 'rgba(20,40,60,0.18)', alien: '#7de07d' },
     mixed:    { base: '#3f6b44', patch1: '#4a7a4b', patch2: '#365a38', sand: '#7d734f', water: '#2e5a70', tint: 'rgba(20,40,60,0.2)',  alien: '#8fe08f' },
     hostile1: { base: '#4b3355', patch1: '#583d63', patch2: '#3c2a46', sand: '#6e5a70', water: '#3d2a50', tint: 'rgba(60,10,40,0.16)',  alien: '#c06bf0' },
-    hostile2: { base: '#5a4030', patch1: '#6a4c38', patch2: '#4a3426', sand: '#7d6a4d', water: '#5a3d30', tint: 'rgba(80,20,0,0.18)',     alien: '#ff9d5c' }
+    hostile2: { base: '#5a4030', patch1: '#6a4c38', patch2: '#4a3426', sand: '#7d6a4d', water: '#5a3d30', tint: 'rgba(80,20,0,0.18)',     alien: '#ff9d5c' },
+    oasis:    { base: '#2f6b5e', patch1: '#3a7a66', patch2: '#285848', sand: '#8a8a5a', water: '#1f7a8a', tint: 'rgba(10,50,55,0.18)',     alien: '#6fe0c8' },
+    dark:     { base: '#2c3626', patch1: '#38462f', patch2: '#222c1e', sand: '#5a5a48', water: '#2a3a30', tint: 'rgba(10,20,10,0.28)',     alien: '#a8d85f' }
   };
+  // which palette each planet index uses
+  const PAL_IDX = ['peaceful', 'mixed', 'hostile1', 'hostile2', 'oasis', 'dark'];
 
   const PL = {
     active: false, ctx: null,
@@ -36,7 +40,7 @@
       this.active = true;
       const PD = window.PD;
       this.planet = window.PLANETS[planetIdx];
-      this.pal = PALETTES[planetIdx === 0 ? 'peaceful' : planetIdx === 1 ? 'mixed' : planetIdx === 2 ? 'hostile1' : 'hostile2'];
+      this.pal = PALETTES[PAL_IDX[planetIdx] || 'peaceful'];
       PD.planetIndex = planetIdx;
 
       // restore or create this planet's persistent surface state

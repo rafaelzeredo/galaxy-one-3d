@@ -172,23 +172,47 @@
 
     // ---------- menus ----------
     menuOpenNow: false,
-    menuTab: 'shipyard', // station tabs: shipyard | trade
+    menuTab: 'equipment', // station tabs: equipment | market | missions
+    galaxyOpen: false,
+    stationIdx: 0,
+    visitN: 0,
     openStation(){
       if(this.menuOpenNow) return;
       this.menuOpenNow = true;
+      this.galaxyOpen = false;
+      this.stationIdx = Math.max(0, window.Space.nearStationIdx);
+      // procedural economy: prices reshuffle every visit (all markets)
+      window.PD.rollMarkets();
+      this.visitN++;
+      this.menuTab = 'equipment';
       window.GameAudio.uiClick();
       this._renderStation();
       this.els.menu.classList.remove('hidden');
     },
     openTrade(){
       if(this.menuOpenNow) return;
+      // short cooldown so the same E press that closed the menu can't instantly reopen it
+      if((this._closeCd || 0) > 0) return;
       this.menuOpenNow = true;
+      this.galaxyOpen = false;
+      window.PD.rollMarkets();
+      this.visitN++;
       window.GameAudio.uiClick();
       this._renderTrade();
       this.els.menu.classList.remove('hidden');
     },
+    openGalaxy(){
+      if(this.menuOpenNow) return;
+      this.menuOpenNow = true;
+      this.galaxyOpen = true;
+      window.GameAudio.uiClick();
+      this._renderGalaxy();
+      this.els.menu.classList.remove('hidden');
+    },
     menuClose(){
       this.menuOpenNow = false;
+      this.galaxyOpen = false;
+      this._closeCd = 6; // ~0.1s: block instant E-reopen at interactables
       this.els.menu.classList.add('hidden');
     },
 
@@ -226,7 +250,7 @@
     _priceLine(good){
       const parts = [];
       for(const mk in window.TRADE_MARKETS){
-        const reachable = mk === 'station' || mk === 'p0' || mk === 'p1';
+        const reachable = mk !== 'p2' && mk !== 'p3' && mk !== 'p5';
         parts.push(window.MARKET_NAMES[mk] + ' ' +
           (reachable ? window.PD.tradeBuyPrice(good, mk) : '—'));
       }
@@ -236,60 +260,19 @@
     _renderStation(){
       const PD = window.PD;
       const m = this.els.menuInner;
-      m.innerHTML = '<h2>ORION STATION</h2><div class="sub">◈ ' + PD.credits + ' CR · cargo ' +
-        PD.cargoUsed() + '/' + PD.cargoMax() + '</div>';
-      this._tabs(m, [{ id: 'shipyard', label: 'SHIPYARD' }, { id: 'trade', label: 'TRADE' }],
+      const stName = window.Space.stations[this.stationIdx] ? window.Space.stations[this.stationIdx].def.name : 'ORION STATION';
+      m.innerHTML = '<h2>' + stName + '</h2><div class="sub">◈ ' + PD.credits + ' CR · cargo ' +
+        PD.cargoUsed() + '/' + PD.cargoMax() + ' · missions ' + PD.missions.length + '/3</div>';
+      this._tabs(m, [{ id: 'equipment', label: 'EQUIPMENT' }, { id: 'market', label: 'MARKET' },
+        { id: 'missions', label: 'MISSIONS' }],
         this.menuTab, id => { this.menuTab = id; window.GameAudio.uiClick(); this._renderStation(); });
 
-      if(this.menuTab === 'trade'){
-        const h = document.createElement('div');
-        h.innerHTML = '<div class="bar-label" style="margin-bottom:6px">COMMODITY EXCHANGE <span>buy low · sell high</span></div>';
-        m.appendChild(h);
-        for(const g in window.TRADE_GOODS){
-          const def = window.TRADE_GOODS[g];
-          const buy = PD.tradeBuyPrice(g, 'station');
-          const sell = PD.tradeSellPrice(g, 'station');
-          const held = PD.trade[g] | 0;
-          const row = document.createElement('div');
-          row.className = 'menu-row';
-          row.innerHTML =
-            '<div class="name">' + def.name +
-              (held ? ' ×' + held : '') +
-              '<small>' + this._priceLine(g) + '</small></div>' +
-            '<div class="price">buy ' + buy + '<br>sell ' + sell + '</div>';
-          const buyBtn = document.createElement('button');
-          buyBtn.className = 'menu-btn';
-          buyBtn.textContent = 'BUY 10';
-          buyBtn.disabled = PD.credits < buy * 10 || PD.cargoUsed() >= PD.cargoMax();
-          buyBtn.addEventListener('click', () => {
-            const got = PD.buyTradeGood(g, 'station', 10);
-            if(got > 0){ window.GameAudio.coin(); PD.save(); }
-            else window.GameAudio.uiClick();
-            this._renderStation();
-          });
-          const sellBtn = document.createElement('button');
-          sellBtn.className = 'menu-btn';
-          sellBtn.textContent = 'SELL ALL';
-          sellBtn.style.marginLeft = '6px';
-          sellBtn.disabled = held <= 0;
-          sellBtn.addEventListener('click', () => {
-            const n = PD.sellTradeGood(g, 'station', held);
-            if(n > 0){ window.GameAudio.coin(); PD.save(); }
-            this._renderStation();
-          });
-          const wrap = document.createElement('div');
-          wrap.style.display = 'flex';
-          wrap.appendChild(buyBtn);
-          wrap.appendChild(sellBtn);
-          row.appendChild(wrap);
-          m.appendChild(row);
-        }
-        const d = document.createElement('div');
-        d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
-        d.textContent = 'Colonists on Terra Prime & Verdant trade at different prices.';
-        m.appendChild(d);
+      if(this.menuTab === 'market'){
+        this._renderMarket(m);
+      } else if(this.menuTab === 'missions'){
+        this._renderMissions(m);
       } else {
-        this._renderShipyard(m);
+        this._renderEquipment(m);
       }
       const close = document.createElement('button');
       close.className = 'menu-btn menu-close';
@@ -298,38 +281,278 @@
       m.appendChild(close);
     },
 
-    _renderShipyard(m){
-      const PD = window.PD;
-      const sellH = document.createElement('div');
-      sellH.innerHTML = '<div class="bar-label" style="margin-bottom:6px">SELL CARGO</div>';
-      m.appendChild(sellH);
-      let any = false;
-      for(const k in window.COMMS){
-        const n = window.PD.cargo[k] | 0;
-        if(n <= 0) continue;
-        any = true;
-        const price = window.PD.priceSell(k, 'peaceful');
-        this._row(m, window.COMMS[k].name + ' ×' + n, 'unit price ' + price + ' CR',
-          (price * n) + ' CR', 'SELL ALL', () => {
-            window.PD.credits += price * n;
-            window.PD.cargo[k] = 0;
-            window.GameAudio.coin();
-            window.PD.save();
-            this._renderStation();
-          });
+    // ---------- missions: procedural NPC board + completion engine ----------
+    _mDestBodies(excludeStationIdx){
+      const list = [];
+      for(let i = 0; i < window.STATIONS.length; i++){
+        if(i === excludeStationIdx) continue;
+        list.push({ kind: 'station', idx: i, name: window.STATIONS[i].name });
       }
-      if(!any){
+      for(const i of [0, 1, 4]){ // market-bearing outposts
+        list.push({ kind: 'planet', idx: i, name: window.PLANETS[i].name });
+      }
+      return list;
+    },
+
+    _genNpcs(){
+      const PD = window.PD;
+      const firsts = ['Ryn', 'Kova', 'Dax', 'Mira', 'Olek', 'Sela', 'Brann', 'Talia', 'Juno', 'Corr'];
+      const roles = ['freight hauler', 'prospector', 'colonist elder', 'bounty hunter', 'smuggler', 'waste-scrapper'];
+      // seeded per-visit so the board is different every time but stable while open
+      const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+      const types = ['delivery', 'hunt'];
+      if(PD.hasModule('emp')) types.push('emp');
+      if(PD.hasModule('passenger')) types.push('passenger');
+      const dests = this._mDestBodies(this.stationIdx);
+      this._npcs = [];
+      const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+      const rollMission = (type, i) => {
+        const dest = pick(dests);
+        let m;
+        if(type === 'delivery'){
+          const good = pick(Object.keys(window.TRADE_GOODS));
+          const qty = rnd(4, 8);
+          const est = PD.tradeBuyPrice(good, 'station') * qty;
+          m = { type, good, qty, dest,
+            label: 'Deliver ' + qty + ' ' + window.TRADE_GOODS[good].name + ' → ' + dest.name,
+            desc: '"Haul ' + qty + ' ' + window.TRADE_GOODS[good].name.toLowerCase() + ' to ' + dest.name +
+              '. Buy them here or bring your own."',
+            reward: Math.round((est * 0.6 + 80) / 5) * 5 };
+        } else if(type === 'passenger'){
+          m = { type, dest,
+            label: 'Ferry a passenger → ' + dest.name,
+            desc: '"Get me (and my cargo of grievances) to ' + dest.name + ' in one piece, pilot."',
+            reward: 250 + rnd(0, 8) * 25 };
+        } else if(type === 'hunt'){
+          const need = rnd(2, 4);
+          m = { type, need, have: 0, dest: null,
+            label: 'Bounty: destroy ' + need + ' Void Raiders',
+            desc: '"Raiders are bleeding our shipping lanes. Kill ' + need + ' of them and the guild pays."',
+            reward: need * 90 };
+        } else {
+          const need = rnd(2, 3);
+          m = { type: 'emp', need, have: 0, dest: null,
+            label: 'Disable ' + need + ' raiders non-lethally',
+            desc: '"The patrol union wants them stopped, not scrapped. Use your EMP emitter — no kills."',
+            reward: need * 140 };
+        }
+        m.id = type + '-' + this.visitN + '-' + i;
+        return m;
+      };
+      const nameOf = () => pick(firsts) + ' ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + '.';
+      const roleOf = () => pick(roles);
+      // NPC 0 always offers a cargo delivery run so every visit has one
+      const t0 = 'delivery';
+      const t1 = pick(types), t2 = pick(types);
+      const slots = [[t0], [t1], [t2]];
+      for(let i = 0; i < 3; i++){
+        const name = nameOf(), role = roleOf();
+        const m = rollMission(slots[i][0], i);
+        m.npc = name + ' (' + role + ')';
+        this._npcs.push({ name: name + ' · ' + role, mission: m, dealt: false });
+      }
+    },
+
+    _renderMissions(m){
+      const PD = window.PD;
+      if(!this._npcs) this._genNpcs();
+      const nh = document.createElement('div');
+      nh.innerHTML = '<div class="bar-label" style="margin-bottom:6px">STATION LOUNGE — NPCs HIRING <span>' +
+        PD.missions.length + '/3 contracts</span></div>';
+      m.appendChild(nh);
+      for(const npc of this._npcs){
+        const mi = npc.mission;
+        const reqMod = (mi.type === 'passenger' && !PD.hasModule('passenger')) ||
+          (mi.type === 'emp' && !PD.hasModule('emp'));
+        this._row(m, npc.name, mi.label + ' — ' + mi.reward + ' CR', '', npc.dealt ? 'DEAL MADE' : 'ACCEPT', () => {
+          if(npc.dealt) return;
+          if(reqMod){ window.Game.uiToast('✖ REQUIRES A SHIP MODULE — see EQUIPMENT tab'); window.GameAudio.alarm(); return; }
+          if(PD.missions.length >= 3){ window.Game.uiToast('✖ CONTRACT LOG FULL (3 max)'); return; }
+          PD.missions.push(Object.assign({}, mi));
+          npc.dealt = true;
+          window.GameAudio.uiBuy();
+          window.Game.uiToast('✒ CONTRACT SIGNED — ' + mi.label);
+          PD.save();
+          this._renderStation();
+        }, npc.dealt || reqMod || PD.missions.length >= 3);
+      }
+      if(PD.missions.some(x => (x.type === 'passenger' && !PD.hasModule('passenger')) ||
+          (x.type === 'emp' && !PD.hasModule('emp')))){
+        const warn = document.createElement('div');
+        warn.style.cssText = 'color:#ffb84d;font-size:11px;text-align:center';
+        warn.textContent = '⚠ A contract needs its module installed — fit it in the EQUIPMENT tab.';
+        m.appendChild(warn);
+      }
+      const ah = document.createElement('div');
+      ah.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">ACTIVE CONTRACTS</div>';
+      m.appendChild(ah);
+      if(!PD.missions.length){
         const d = document.createElement('div');
-        d.style.cssText = 'color:#8fc6d8;font-size:12px;text-align:center;margin-bottom:10px';
-        d.textContent = 'Cargo hold is empty — mine asteroids to gather Iron Ore.';
+        d.style.cssText = 'color:#8fc6d8;font-size:12px;text-align:center';
+        d.textContent = 'No active contracts — accept one from the lounge above.';
         m.appendChild(d);
       }
+      for(let i = 0; i < PD.missions.length; i++){
+        const mi = PD.missions[i];
+        const prog = mi.type === 'delivery'
+          ? 'carrying ' + Math.min(PD.trade[mi.good] | 0, mi.qty) + '/' + mi.qty + ' ' + window.TRADE_GOODS[mi.good].name
+          : mi.type === 'passenger' ? 'ferry to ' + mi.dest.name
+          : (mi.have | 0) + '/' + mi.need;
+        this._row(m, mi.label, 'reward ' + mi.reward + ' CR · ' + prog, '', 'ABANDON', () => {
+          PD.missions.splice(i, 1);
+          window.GameAudio.uiClick();
+          PD.save();
+          this._renderStation();
+        });
+      }
+    },
+
+    // mission progress / completion (runs every frame in space & on the surface)
+    _checkMissions(){
+      const PD = window.PD;
+      if(!PD.missions.length) return;
+      for(let i = PD.missions.length - 1; i >= 0; i--){
+        const mi = PD.missions[i];
+        if(!mi.dest) continue; // kill/disable missions complete via events
+        if(this._nearBody(mi.dest)){
+          if(mi.type === 'delivery'){
+            if((PD.trade[mi.good] | 0) >= mi.qty){
+              PD.trade[mi.good] -= mi.qty;
+              PD.credits += mi.reward;
+              this._missionDone(mi);
+            }
+          } else if(mi.type === 'passenger'){
+            PD.credits += mi.reward;
+            this._missionDone(mi);
+          }
+        }
+      }
+    },
+    _nearBody(dest){
+      const S = window.Space;
+      if(this.state === 'planet'){
+        return dest.kind === 'planet' && dest.idx === window.PD.planetIndex;
+      }
+      if(this.state !== 'space') return false;
+      let pos;
+      if(dest.kind === 'station') pos = S.stations[dest.idx] && S.stations[dest.idx].grp.position;
+      else pos = S.planetMeshes[dest.idx] && S.planetMeshes[dest.idx].position;
+      return pos && S.ship.position.distanceTo(pos) < 200;
+    },
+    _missionDone(mi){
+      const PD = window.PD;
+      PD.missions.splice(PD.missions.indexOf(mi), 1);
+      PD.missionsDone++;
+      window.GameAudio.coin();
+      this.uiToast('✔ CONTRACT COMPLETE — +' + mi.reward + ' CR (' + mi.label + ')');
+      PD.save();
+    },
+    onPirateKill(){
+      for(const mi of window.PD.missions){
+        if(mi.type === 'hunt'){
+          mi.have = (mi.have | 0) + 1;
+          if(mi.have >= mi.need){ window.PD.credits += mi.reward; this._missionDone(mi); }
+          else window.Game.uiToast('CONTRACT ' + mi.label + ' — ' + mi.have + '/' + mi.need);
+        }
+      }
+    },
+    onPirateDisable(){
+      for(const mi of window.PD.missions){
+        if(mi.type === 'emp'){
+          mi.have = (mi.have | 0) + 1;
+          if(mi.have >= mi.need){ window.PD.credits += mi.reward; this._missionDone(mi); }
+          else window.Game.uiToast('CONTRACT ' + mi.label + ' — ' + mi.have + '/' + mi.need);
+        }
+      }
+    },
+
+    // ---------- galaxy map (Tab): direct travel to any system body ----------
+    GALAXY: [
+      { name: 'ORION REACH', bodies: [
+        { kind: 'station', idx: 0 }, { kind: 'planet', idx: 0 }, { kind: 'planet', idx: 1 }] },
+      { name: 'KRELL EXPANSE', bodies: [
+        { kind: 'station', idx: 1 }, { kind: 'planet', idx: 2 }, { kind: 'planet', idx: 3 }] },
+      { name: 'NOVARA SPUR', bodies: [
+        { kind: 'station', idx: 2 }, { kind: 'planet', idx: 4 }, { kind: 'planet', idx: 5 }] }
+    ],
+    _bodyInfo(b){
+      if(b.kind === 'station'){
+        const st = window.STATIONS[b.idx];
+        return { name: st.name, sub: st.system, color: '#ffd25f', pos: st.pos };
+      }
+      const p = window.PLANETS[b.idx];
+      return { name: p.name, sub: p.type.toUpperCase() + ' · ' + p.desc,
+        color: '#' + p.color.toString(16).padStart(6, '0'), pos: [p.x, p.y, p.z] };
+    },
+    _renderGalaxy(){
+      const PD = window.PD;
+      const m = this.els.menuInner;
+      m.innerHTML = '<h2>GALAXY MAP</h2><div class="sub">◈ ' + PD.credits +
+        ' CR · 3 systems · 9 bodies · [TAB] to close</div>';
+      const S = window.Space;
+      for(const sys of this.GALAXY){
+        const sh = document.createElement('div');
+        sh.innerHTML = '<div class="bar-label" style="margin:10px 0 6px">' + sys.name + '</div>';
+        m.appendChild(sh);
+        for(const b of sys.bodies){
+          const info = this._bodyInfo(b);
+          const dist = Math.round(Math.hypot(
+            info.pos[0] - S.ship.position.x, info.pos[1] - S.ship.position.y, info.pos[2] - S.ship.position.z));
+          const here = dist < 220;
+          const row = document.createElement('div');
+          row.className = 'menu-row';
+          row.innerHTML =
+            '<div class="name"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' +
+            info.color + ';margin-right:7px;box-shadow:0 0 6px ' + info.color + '"></span>' +
+            info.name + (here ? ' <span style="color:#5ff0ff">◀ HERE</span>' : '') +
+            '<small>' + info.sub + ' · ' + dist + 'u</small></div>' +
+            '<div class="price">' + (b.kind === 'station' ? 'DOCK HUB' : 'LANDABLE') + '</div>';
+          const btn = document.createElement('button');
+          btn.className = 'menu-btn';
+          btn.textContent = 'JUMP';
+          btn.disabled = here;
+          btn.addEventListener('click', () => {
+            let blocked = false;
+            for(const e of S.pirates){
+              if(e.mesh.position.distanceTo(S.ship.position) < 700){ blocked = true; break; }
+            }
+            if(blocked){
+              window.GameAudio.alarm();
+              this.uiToast('✖ JUMP BLOCKED — HOSTILES IN RANGE');
+              return;
+            }
+            const kind = b.kind, idx = b.idx;
+            this.menuClose();
+            this._fade(() => {
+              if(S.jumpTo(kind, idx)){
+                window.GameAudio.warp();
+                this.uiToast('⇢ JUMPED TO ' + this._bodyInfo(b).name);
+              }
+            });
+          });
+          row.appendChild(btn);
+          m.appendChild(row);
+        }
+      }
+      const d = document.createElement('div');
+      d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
+      d.textContent = 'Direct hyperjumps, no stargates required. Cannot jump with hostiles within 700u.';
+      m.appendChild(d);
+      const close = document.createElement('button');
+      close.className = 'menu-btn menu-close';
+      close.textContent = 'CLOSE MAP  [TAB]';
+      close.addEventListener('click', () => this.menuClose());
+      m.appendChild(close);
+    },
+
+    _renderEquipment(m){
+      const PD = window.PD;
       // medkit
       this._row(m, 'Medkit', 'heals 55 hull · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
         if(window.PD.credits < 60) return;
         window.PD.credits -= 60; window.PD.medkits++; window.GameAudio.uiBuy(); window.PD.save(); this._renderStation();
       }, window.PD.credits < 60);
-      // upgrades
+      // ship upgrades
       const uh = document.createElement('div');
       uh.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP UPGRADES</div>';
       m.appendChild(uh);
@@ -358,6 +581,134 @@
             this._renderStation();
           }, window.PD.credits < cost);
       }
+      // equipment modules: install / uninstall / buy / sell
+      const mh = document.createElement('div');
+      mh.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP MODULES  <span>' +
+        PD.installed.length + '/' + window.MODULE_SLOTS + ' slots · hold ' + PD.modules.length +
+        '/' + window.MODULE_STORE_CAP + '</span></div>';
+      m.appendChild(mh);
+      for(const k in window.MODULE_DEFS){
+        const def = window.MODULE_DEFS[k];
+        const installed = PD.installed.indexOf(k) >= 0;
+        const stored = PD.hasModuleStored(k);
+        if(installed){
+          this._row(m, def.name, def.desc + ' · active', '', 'UNINSTALL', () => {
+            PD.installed.splice(PD.installed.indexOf(k), 1);
+            if(PD.modules.length < window.MODULE_STORE_CAP) PD.modules.push(k);
+            else { PD.credits += Math.round(def.cost * 0.6); window.Game.uiToast('+ ' + Math.round(def.cost * 0.6) + ' CR (hold full — sold)'); }
+            window.GameAudio.uiClick();
+            window.PD.save();
+            this._renderStation();
+          });
+        } else if(stored){
+          this._row(m, def.name, def.desc + ' · in module hold', '', 'INSTALL', () => {
+            if(PD.installed.length >= window.MODULE_SLOTS){ window.Game.uiToast('✖ ALL MODULE SLOTS FULL'); return; }
+            PD.modules.splice(PD.modules.indexOf(k), 1);
+            PD.installed.push(k);
+            window.GameAudio.uiBuy();
+            window.PD.save();
+            this._renderStation();
+          });
+          // sell a spare module from the hold
+          this._row(m, def.name, 'sell spare module', Math.round(def.cost * 0.6) + ' CR', 'SELL', () => {
+            PD.modules.splice(PD.modules.indexOf(k), 1);
+            PD.credits += Math.round(def.cost * 0.6);
+            window.GameAudio.coin();
+            window.PD.save();
+            this._renderStation();
+          });
+        } else {
+          this._row(m, def.name, def.desc, def.cost + ' CR', 'BUY', () => {
+            if(PD.credits < def.cost) return;
+            if(PD.modules.length >= window.MODULE_STORE_CAP){ window.Game.uiToast('✖ MODULE HOLD FULL — install or sell spares'); return; }
+            PD.credits -= def.cost;
+            PD.modules.push(k);
+            window.GameAudio.uiBuy();
+            window.PD.save();
+            this._renderStation();
+          }, PD.credits < def.cost);
+        }
+      }
+      const hint = document.createElement('div');
+      hint.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:8px';
+      hint.textContent = 'Uninstalled modules sit in the ship\'s module hold (' + window.MODULE_STORE_CAP + ' max).';
+      m.appendChild(hint);
+    },
+
+    _renderMarket(m){
+      const PD = window.PD;
+      // sell raw cargo
+      const sellH = document.createElement('div');
+      sellH.innerHTML = '<div class="bar-label" style="margin-bottom:6px">SELL CARGO</div>';
+      m.appendChild(sellH);
+      let any = false;
+      for(const k in window.COMMS){
+        const n = window.PD.cargo[k] | 0;
+        if(n <= 0) continue;
+        any = true;
+        const price = window.PD.priceSell(k, 'peaceful');
+        this._row(m, window.COMMS[k].name + ' ×' + n, 'unit price ' + price + ' CR',
+          (price * n) + ' CR', 'SELL ALL', () => {
+            window.PD.credits += price * n;
+            window.PD.cargo[k] = 0;
+            window.GameAudio.coin();
+            window.PD.save();
+            this._renderStation();
+          });
+      }
+      if(!any){
+        const d = document.createElement('div');
+        d.style.cssText = 'color:#8fc6d8;font-size:12px;text-align:center;margin-bottom:10px';
+        d.textContent = 'Cargo hold is empty — mine asteroids to gather Iron Ore.';
+        m.appendChild(d);
+      }
+      // commodity exchange
+      const h = document.createElement('div');
+      h.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">COMMODITY EXCHANGE <span>buy low · sell high</span></div>';
+      m.appendChild(h);
+      for(const g in window.TRADE_GOODS){
+        const def = window.TRADE_GOODS[g];
+        const buy = PD.tradeBuyPrice(g, 'station');
+        const sell = PD.tradeSellPrice(g, 'station');
+        const held = PD.trade[g] | 0;
+        const row = document.createElement('div');
+        row.className = 'menu-row';
+        row.innerHTML =
+          '<div class="name">' + def.name +
+            (held ? ' ×' + held : '') +
+            '<small>' + this._priceLine(g) + '</small></div>' +
+          '<div class="price">buy ' + buy + '<br>sell ' + sell + '</div>';
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'menu-btn';
+        buyBtn.textContent = 'BUY 10';
+        buyBtn.disabled = PD.credits < buy * 10 || PD.cargoUsed() >= PD.cargoMax();
+        buyBtn.addEventListener('click', () => {
+          const got = PD.buyTradeGood(g, 'station', 10);
+          if(got > 0){ window.GameAudio.coin(); PD.save(); }
+          else window.GameAudio.uiClick();
+          this._renderStation();
+        });
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'menu-btn';
+        sellBtn.textContent = 'SELL ALL';
+        sellBtn.style.marginLeft = '6px';
+        sellBtn.disabled = held <= 0;
+        sellBtn.addEventListener('click', () => {
+          const n = PD.sellTradeGood(g, 'station', held);
+          if(n > 0){ window.GameAudio.coin(); PD.save(); }
+          this._renderStation();
+        });
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex';
+        wrap.appendChild(buyBtn);
+        wrap.appendChild(sellBtn);
+        row.appendChild(wrap);
+        m.appendChild(row);
+      }
+      const d = document.createElement('div');
+      d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
+      d.textContent = 'Procedural economy — prices reshuffle on every visit. Outposts on Terra, Verdant & Novara trade too.';
+      m.appendChild(d);
     },
 
     _renderTrade(){
@@ -483,6 +834,7 @@
       if(this.state === 'space'){
         if(!this.menuOpenNow && window.Space.landPrompt) prompt = window.Space.landPrompt;
         else if(!this.menuOpenNow && !window.Space.warp && window.Space.warpPrompt) prompt = window.Space.warpPrompt;
+        else if(!this.menuOpenNow && !window.Space.warp) prompt = 'Press <b>TAB</b> for the galaxy map';
       } else if(this.state === 'planet'){
         prompt = window.Planet.prompt;
       }
@@ -633,18 +985,23 @@
     update(dt){
       if(this.state === 'start') return;
       if(this.menuOpenNow){
-        // world keeps rendering but pauses gameplay; E / Esc closes
-        if(this.input.pressed('KeyE') || this.input.pressed('Escape')) this.menuClose();
+        // world keeps rendering but pauses gameplay; E / Esc / Tab closes
+        if(this.input.pressed('KeyE') || this.input.pressed('Escape') ||
+          (this.galaxyOpen && this.input.pressed('Tab'))) this.menuClose();
       } else if(this.state === 'space'){
-        if(this.input.pressed('KeyE')){
+        if(this.input.pressed('Tab')) this.openGalaxy();
+        else if(this.input.pressed('KeyE')){
           if(window.Space.nearStation) this.openStation();
           else if(window.Space.nearPlanet >= 0) this.landOn(window.Space.nearPlanet);
         }
         window.Space.update(dt);
+        this._checkMissions();
       } else if(this.state === 'planet'){
         window.Planet.update(dt);
+        this._checkMissions();
       }
       this.input.pressedCodes.clear();
+      if(this._closeCd > 0) this._closeCd--;
       this._renderHudDom();
     },
 

@@ -90,7 +90,10 @@
     warp(){ this.tone(200, 0.7, 'sine', 0.2, 1400); this.noise(0.7, 0.2, 1200, 3000); },
     alarm(){ this.tone(440, 0.25, 'square', 0.15, 220); this.tone(440, 0.25, 'square', 0.15, 220, 0.3); },
     // scanner lock acquired
-    lock(){ this.tone(600, 0.08, 'square', 0.1); this.tone(900, 0.1, 'square', 0.12, 1200, 0.08); this.tone(1200, 0.14, 'sine', 0.12, 1600, 0.18); }
+    lock(){ this.tone(600, 0.08, 'square', 0.1); this.tone(900, 0.1, 'square', 0.12, 1200, 0.08); this.tone(1200, 0.14, 'sine', 0.12, 1600, 0.18); },
+
+    // EMP pulse: descending sweep + low thud
+    emp(){ this.tone(1400, 0.35, 'sawtooth', 0.14, 180, 0.3); this.tone(90, 0.3, 'sine', 0.2, 60, 0.25); }
   };
   window.GameAudio = A;
 })();
