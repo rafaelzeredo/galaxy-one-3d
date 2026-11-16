@@ -68,7 +68,7 @@
       this.input = inp;
       window.addEventListener('keydown', e => {
         const c = e.code;
-        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','Tab'].indexOf(c) >= 0) e.preventDefault();
+        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','Tab'].indexOf(c) >= 0) e.preventDefault();
         window.GameAudio.init(); window.GameAudio.resume();
         if(!inp.keys.has(c)) inp.pressedCodes.add(c);
         inp.keys.add(c);
@@ -482,6 +482,7 @@
       let prompt = '';
       if(this.state === 'space'){
         if(!this.menuOpenNow && window.Space.landPrompt) prompt = window.Space.landPrompt;
+        else if(!this.menuOpenNow && !window.Space.warp && window.Space.warpPrompt) prompt = window.Space.warpPrompt;
       } else if(this.state === 'planet'){
         prompt = window.Planet.prompt;
       }
@@ -503,6 +504,38 @@
         const S = window.Space;
         const hov = S.hover;
         const cx = vw / 2, cy = vh / 2;
+
+        // warp overlay: spool ring while charging, speed lines while running
+        if(S.warp){
+          if(S.warp.phase === 'charge'){
+            const pct = Math.min(1, S.warp.t / 0.9);
+            ctx.strokeStyle = 'rgba(127,255,255,0.95)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 44, -1.5708, -1.5708 + pct * 6.283);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(223,239,255,0.9)';
+            ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('WARP SPOOLING', cx, cy + 74);
+          } else {
+            // radial speed lines
+            ctx.strokeStyle = 'rgba(159,216,255,0.5)';
+            ctx.lineWidth = 1.5;
+            for(let i = 0; i < 14; i++){
+              const a = (performance.now() / 240 + i * 0.449) % 6.283;
+              const r0 = vh * 0.28, r1 = vh * (0.5 + 0.2 * Math.random());
+              ctx.beginPath();
+              ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+              ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+              ctx.stroke();
+            }
+            ctx.fillStyle = 'rgba(223,239,255,0.85)';
+            ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('⇢ ' + S.warp.name, cx, cy + 74);
+          }
+        }
 
         // lock-on progress ring around the crosshair
         if(hov && !S.locked){

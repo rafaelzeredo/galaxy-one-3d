@@ -34,6 +34,24 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
    traders, `H` for medkit. Colonist outposts also run a commodity exchange.
 7. Press `R` near your landed ship to take off again.
 
+## Quick Travel
+- Fully scan a planet or station (lock ring completes) and a prompt appears:
+  **press `Q` to warp** straight to it — twin-engine spool, speed streaks, synced
+  v²/2a braking, and an arrival right at the landing pad.
+- Warp is **blocked while hostiles are within 700u** — clear the sector first.
+
+## Feel & Fidelity
+- Smooth thrust: the throttle spools up over ~0.5s; twin engine flames, plume
+  glow and particle trails all scale with throttle.
+- The hull visually banks into turns and relaxes when you level out.
+- Dynamic lighting: colored nebula wash lights brighten dark sectors, a ship
+  headlight reads nearby rocks, and pirates carry blinking red beacons, halos
+  and point lights so they're visible against any backdrop.
+- Seamless transitions: camera swoop + exhaust burst on (re)entry, white
+  descent flash while landing, drifting cloud shadows and dust motes on foot.
+- Performance: shared geometries/materials and pooled particles keep the frame
+  time flat; pixel ratio capped for stable framerates.
+
 ## Planets
 
 | Planet | Type | Notes |

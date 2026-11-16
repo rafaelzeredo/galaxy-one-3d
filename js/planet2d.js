@@ -28,6 +28,7 @@
     prompt: '', promptTarget: null,
     hitFlash: 0,
     fx: [], walkT: 0, moving: false, fireFlash: 0,
+    enterFlash: 0, cloudShadows: [], motes: [],
 
     init(ctx){ this.ctx = ctx; },
 
@@ -57,6 +58,22 @@
       this.bullets = [];
       this.fx = [];
       this.aliens = [];
+      // seamless landing: white descent flash + drifting atmosphere
+      this.enterFlash = 1;
+      this.cloudShadows = [];
+      for(let i = 0; i < 4; i++){
+        this.cloudShadows.push({
+          x: Math.random() * WORLD, y: Math.random() * WORLD,
+          r: 260 + Math.random() * 340, squish: 0.45 + Math.random() * 0.2,
+          vx: 14 + Math.random() * 20, vy: 6 + Math.random() * 10
+        });
+      }
+      this.motes = [];
+      for(let i = 0; i < 26; i++){
+        this.motes.push({ x: Math.random() * WORLD, y: Math.random() * WORLD,
+          vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
+          r: 1 + Math.random() * 1.6, ph: Math.random() * 6.28 });
+      }
       // respawn initial aliens (surface state keeps harvested nodes but aliens refill)
       const n = Math.round(6 + this.planet.alienRate * 7);
       for(let i = 0; i < n; i++) this._spawnAlien(this.planet.alienRate > 1.2 && Math.random() < 0.3);
@@ -436,6 +453,18 @@
       }
 
       if(this.hitFlash > 0) this.hitFlash -= dt;
+      if(this.enterFlash > 0) this.enterFlash = Math.max(0, this.enterFlash - dt * 1.1);
+      // ambient drift: cloud shadows + dust motes (cheap, wraps in world space)
+      for(const cs of this.cloudShadows){
+        cs.x += cs.vx * dt; cs.y += cs.vy * dt;
+        if(cs.x > WORLD + cs.r) cs.x = -cs.r;
+        if(cs.y > WORLD + cs.r) cs.y = -cs.r;
+      }
+      for(const m of this.motes){
+        m.x += m.vx * dt; m.y += m.vy * dt;
+        if(m.x < 0) m.x = WORLD; if(m.x > WORLD) m.x = 0;
+        if(m.y < 0) m.y = WORLD; if(m.y > WORLD) m.y = 0;
+      }
       if(!PD.alive){ window.Game.onPlanetDeath(); return; }
     },
 
@@ -503,6 +532,24 @@
       ctx.save();
       ctx.translate(-ox + shx, -oy + shy);
       ctx.drawImage(st.tex, 0, 0);
+
+      // drifting cloud shadows give the surface living atmosphere
+      for(const cs of this.cloudShadows){
+        if(cs.x + cs.r < ox || cs.x - cs.r > ox + vw || cs.y + cs.r < oy || cs.y - cs.r > oy + vh) continue;
+        ctx.fillStyle = 'rgba(6,10,18,0.13)';
+        ctx.beginPath();
+        ctx.ellipse(cs.x, cs.y, cs.r, cs.r * cs.squish, 0.4, 0, 6.283);
+        ctx.fill();
+      }
+      // floating dust motes catch the light
+      const tn = performance.now() / 1000;
+      for(const m of this.motes){
+        if(m.x < ox || m.x > ox + vw || m.y < oy || m.y > oy + vh) continue;
+        ctx.globalAlpha = 0.25 + 0.2 * Math.sin(tn * 2 + m.ph);
+        ctx.fillStyle = '#cfe8ff';
+        ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, 6.283); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
 
       // nests (glowing brood clusters)
       for(const n of st.nestsR){
@@ -852,6 +899,16 @@
       vg.addColorStop(1, 'rgba(0,0,0,0.55)');
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, vw, vh);
+
+      // seamless landing transition: descent glow fades out over ~0.9s
+      if(this.enterFlash > 0){
+        const e = this.enterFlash;
+        const eg = ctx.createRadialGradient(vw/2, vh/2, vh * 0.1, vw/2, vh/2, vh * 0.75);
+        eg.addColorStop(0, 'rgba(255,255,255,' + (e * 0.5).toFixed(3) + ')');
+        eg.addColorStop(1, 'rgba(127,224,255,' + (e * 0.22).toFixed(3) + ')');
+        ctx.fillStyle = eg;
+        ctx.fillRect(0, 0, vw, vh);
+      }
 
       // minimap (Mini DayZ style)
       const ms = 130, mx = vw - ms - 16, my = vh - ms - 16;
