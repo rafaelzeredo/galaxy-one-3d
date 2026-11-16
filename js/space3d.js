@@ -3,6 +3,30 @@
   // 3D space mode: Three.js flight, laser mining, pirates, station docking.
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
+  // ---- pirate raider archetypes -------------------------------------------------
+  // Distinct hulls with their own silhouette, palette, armour, speed, damage, fire
+  // cadence, engagement range and bounty. Stats are tuned so the baseline VOID
+  // RAIDER keeps the original feel; the others trade off along one axis each.
+  // `minWeapon` gates heavier hulls until the player's guns can answer them.
+  const PIRATE_TYPES = [
+    { key: 'raider', name: 'VOID RAIDER', scale: 1.00,
+      hp: [26, 44], speed: 55, dmg: 7, fire: [1.1, 1.9], range: 380,
+      bounty: [40, 100], minWeapon: 1, weight: 10,
+      hull: 0x9a3546, glow: 0xff5f7a, engine: 0xff6a3d },
+    { key: 'stalker', name: 'VOID STALKER', scale: 0.80,
+      hp: [16, 26], speed: 78, dmg: 5, fire: [1.2, 2.0], range: 340,
+      bounty: [35, 65], minWeapon: 1, weight: 7,
+      hull: 0x2f5f70, glow: 0x5fd8ff, engine: 0x5fd8ff },
+    { key: 'marauder', name: 'VOID MARAUDER', scale: 1.18,
+      hp: [42, 60], speed: 40, dmg: 9, fire: [0.85, 1.4], range: 430,
+      bounty: [70, 120], minWeapon: 1, weight: 5,
+      hull: 0x6a4fb0, glow: 0xc06bf0, engine: 0x9f6bff },
+    { key: 'warlord', name: 'VOID WARLORD', scale: 1.60,
+      hp: [75, 105], speed: 30, dmg: 13, fire: [1.4, 2.2], range: 470,
+      bounty: [150, 220], minWeapon: 2, weight: 3,
+      hull: 0x8a3f2f, glow: 0xff9d5c, engine: 0xffb347 }
+  ];
+
   const S = {
     ready: false, active: false,
     nearPlanet: -1, nearStation: false, nearStationIdx: -1, landPrompt: '',
@@ -10,6 +34,7 @@
     planetMeshes: [],
     stations: [],
     empCD: 0, empPulses: [],
+    PIRATE_TYPES: PIRATE_TYPES,
 
     init(canvas){
       if(this.ready) return;
@@ -50,6 +75,8 @@
       this.parts = [];
       this.fireTimer = 0; this.wing = 0;
       this.pirateTimer = 14;
+      // pirate model caches: shared geometries/materials per raider type
+      this._pTex = null; this._pCache = {};
       this.shieldDelay = 0;
       this.shake = 0;
       // hover targeting / lock-on state
@@ -633,55 +660,180 @@
       window.GameAudio.laser();
     },
 
-    _enemyFire(p){
+    _enemyFire(p, dmg){
       const toP = this.ship.position.clone().sub(p.mesh.position).normalize();
       const mesh = new THREE.Mesh(this.enemyLaserGeo,
-        new THREE.MeshBasicMaterial({ color: 0xff5f7a }));
+        new THREE.MeshBasicMaterial({ color: p.type.glow }));
       mesh.position.copy(p.mesh.position).addScaledVector(toP, 4);
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), toP);
-      this.lasers.push({ mesh, vel: toP.multiplyScalar(520), dmg: 7, life: 1.8, mine: false });
+      this.lasers.push({ mesh, vel: toP.multiplyScalar(520), dmg: dmg || 7, life: 1.8, mine: false });
       this.scene.add(mesh);
       window.GameAudio.tone ? window.GameAudio.laser() : 0;
     },
 
-    _spawnPirate(){
-      if(this.pirates.length >= 4) return;
+    // Procedural hull plating texture (panel seams + rivets + scuffs). Shared by
+    // every pirate; per-type colour comes from the material tint.
+    _panelTexture(){
+      if(this._pTex) return this._pTex;
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = 'rgba(0,0,0,0.32)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(0, 21); g.lineTo(64, 21);
+      g.moveTo(0, 43); g.lineTo(64, 43);
+      g.moveTo(21, 0); g.lineTo(21, 21);
+      g.moveTo(43, 21); g.lineTo(43, 43);
+      g.moveTo(32, 43); g.lineTo(32, 64);
+      g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.38)';
+      for(let i = 0; i < 12; i++) g.fillRect((i * 13) % 60 + 2, (i * 29) % 60 + 2, 2, 2);
+      g.fillStyle = 'rgba(0,0,0,0.10)';
+      g.fillRect(8, 8, 12, 4);
+      g.fillRect(46, 50, 10, 5);
+      const tex = new THREE.CanvasTexture(c);
+      tex.magFilter = THREE.NearestFilter;
+      this._pTex = tex;
+      return tex;
+    },
+
+    // Builds one raider hull. Geometries and materials are cached per type and
+    // shared between instances; the hull always faces nose +Z so `lookAt` gives
+    // a correct profile from any angle.
+    _buildPirateModel(def){
+      const cache = this._pCache[def.key] ||
+        (this._pCache[def.key] = {
+          hullMat: new THREE.MeshStandardMaterial({
+            color: def.hull, roughness: 0.55, metalness: 0.65, map: this._panelTexture() }),
+          glowMat: new THREE.MeshBasicMaterial({ color: def.glow }),
+          cone: new THREE.ConeGeometry(1.7, 5.6, 6),
+          slim: new THREE.ConeGeometry(1.0, 7.4, 5),
+          oct: new THREE.CylinderGeometry(2.0, 2.0, 4.4, 8),
+          fat: new THREE.DodecahedronGeometry(2.5, 0),
+          wing: new THREE.BoxGeometry(6.4, 0.45, 1.9),
+          fin: new THREE.BoxGeometry(3.2, 0.3, 1.2),
+          pod: new THREE.CylinderGeometry(0.55, 0.55, 3.6, 6),
+          plate: new THREE.BoxGeometry(3.1, 0.7, 2.6),
+          turret: new THREE.SphereGeometry(0.9, 7, 6),
+          orb: new THREE.SphereGeometry(0.6, 6, 5)
+        });
       const grp = new THREE.Group();
-      const mat = new THREE.MeshStandardMaterial({ color: 0x9a3546, roughness: 0.5, metalness: 0.6 });
-      const body = new THREE.Mesh(new THREE.ConeGeometry(1.8, 5.5, 6), mat);
-      body.rotation.x = Math.PI / 2;
-      grp.add(body);
-      const w = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.5, 2), mat);
-      grp.add(w);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.7, 6, 6),
-        new THREE.MeshBasicMaterial({ color: 0xff5f7a }));
-      eye.position.set(0, 0, -2.2);
-      grp.add(eye);
-      // blinking beacon + additive halo keep raiders visible even against nebula clouds
+      const hullMeshes = [];
+      const addHull = geo => {
+        const m = new THREE.Mesh(geo, cache.hullMat);
+        grp.add(m); hullMeshes.push(m); return m;
+      };
+      const addGlow = (x, y, z) => {
+        const m = new THREE.Mesh(cache.orb, cache.glowMat);
+        m.position.set(x, y, z);
+        grp.add(m);
+        return m;
+      };
+      if(def.key === 'stalker'){
+        // needle interceptor: long slim hull, forward canards, single tail light
+        const body = addHull(cache.slim); body.rotation.x = Math.PI / 2;
+        const canard = addHull(cache.fin); canard.position.z = 2.3;
+        const fin = addHull(cache.fin);
+        fin.position.z = -2.7; fin.rotation.z = Math.PI / 2; fin.scale.set(0.7, 1.1, 1);
+        addGlow(0, 0, -2.9);
+      } else if(def.key === 'warlord'){
+        // heavy brawler: fat core, armoured shoulders, dorsal turret, twin thusters
+        const core = addHull(cache.fat); core.rotation.x = Math.PI / 2;
+        const nose = addHull(cache.cone);
+        nose.rotation.x = Math.PI / 2; nose.scale.set(0.8, 0.9, 0.8); nose.position.z = 3.2;
+        const pl = addHull(cache.plate); pl.position.set(-2.2, 0.8, 0.6); pl.rotation.z = 0.3;
+        const pr = addHull(cache.plate); pr.position.set(2.2, 0.8, 0.6); pr.rotation.z = -0.3;
+        const tur = addHull(cache.turret); tur.position.set(0, 1.6, -0.4);
+        addGlow(0, 0, -2.5);
+        addGlow(-1.9, -1.2, 2.0);
+        addGlow(1.9, -1.2, 2.0);
+      } else if(def.key === 'marauder'){
+        // gunship: octagonal core, side engine pods, nose cone
+        const core = addHull(cache.oct); core.rotation.x = Math.PI / 2;
+        const nose = addHull(cache.cone);
+        nose.rotation.x = Math.PI / 2; nose.scale.set(0.7, 0.8, 0.7); nose.position.z = 3.4;
+        const podL = addHull(cache.pod); podL.rotation.x = Math.PI / 2; podL.position.set(-2.5, 0, 0.4);
+        const podR = addHull(cache.pod); podR.rotation.x = Math.PI / 2; podR.position.set(2.5, 0, 0.4);
+        addGlow(0, 0, -2.7);
+        addGlow(-2.5, 0, 2.2);
+        addGlow(2.5, 0, 2.2);
+      } else {
+        // baseline raider: swept delta wing + nose sensor
+        const body = addHull(cache.cone); body.rotation.x = Math.PI / 2;
+        const w = addHull(cache.wing); w.rotation.z = 0.12;
+        addGlow(0, 0, -2.3);
+        addGlow(0, 0, 3.3);
+      }
+      grp.scale.setScalar(def.scale);
+      return { grp, hullMeshes };
+    },
+
+    // Weighted pick; heavier hulls stay rare and are gated behind weapon level
+    // so early-game encounters remain survivable.
+    _pickPirateType(){
+      const wLvl = window.PD.up.weapon;
+      const pool = PIRATE_TYPES.filter(t => t.minWeapon <= wLvl);
+      let total = 0;
+      for(const t of pool) total += t.weight;
+      let roll = Math.random() * total;
+      for(const t of pool){
+        roll -= t.weight;
+        if(roll <= 0) return t;
+      }
+      return pool[pool.length - 1];
+    },
+
+    _spawnPirate(typeKey){
+      if(this.pirates.length >= 4) return;
+      const type = (typeKey && PIRATE_TYPES.find(t => t.key === typeKey)) || this._pickPirateType();
+      const grp = this._buildPirateModel(type).grp;
+      // per-instance blink + engine lights (independent animation per raider)
       const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.55, 6, 6),
         new THREE.MeshBasicMaterial({ color: 0xff2d4d, transparent: true, opacity: 0.95, depthWrite: false }));
       beacon.position.set(0, 1.4, 1.8);
       grp.add(beacon);
       const halo = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 6),
-        new THREE.MeshBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.28, depthWrite: false }));
+        new THREE.MeshBasicMaterial({ color: type.glow, transparent: true, opacity: 0.28, depthWrite: false }));
       halo.position.set(0, 0, 2.4);
       grp.add(halo);
       const tail = new THREE.Mesh(new THREE.SphereGeometry(0.8, 6, 5),
-        new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: 0.5, depthWrite: false }));
+        new THREE.MeshBasicMaterial({ color: type.engine, transparent: true, opacity: 0.5, depthWrite: false }));
       tail.position.set(0, 0, 3.4);
       grp.add(tail);
-      const plight = new THREE.PointLight(0xff4060, 0.7, 260, 1.6);
+      const plight = new THREE.PointLight(type.glow, 0.7, 260, 1.6);
       plight.position.set(0, 0, 3);
       grp.add(plight);
       const dir = V3(Math.random() - 0.5, Math.random() * 0.4, Math.random() - 0.5).normalize();
       grp.position.copy(this.ship.position).addScaledVector(dir, 420);
-      const p = { mesh: grp, hp: 26 + Math.random() * 18, fireT: 1 + Math.random(), vel: V3(0,0,0),
-        beacon, halo, plight };
+      const p = { mesh: grp, type,
+        hp: type.hp[0] + Math.random() * (type.hp[1] - type.hp[0]),
+        fireT: 1 + Math.random(), vel: V3(0,0,0), bank: 0, seed: Math.random() * 9,
+        beacon, halo, tail, plight };
       grp.lookAt(this.ship.position);
       this.pirates.push(p);
       this.scene.add(grp);
       window.GameAudio.alarm();
-      window.Game.uiToast('⚠ PIRATE DETECTED');
+      window.Game.uiToast('⚠ ' + type.name + ' DETECTED');
+      return p;
+    },
+
+    // Single destruction path so bounty, hooks and cleanup never diverge.
+    _killPirate(e){
+      this._spawnExplosion(e.mesh.position, true);
+      window.GameAudio.bigBoom();
+      const PD = window.PD;
+      const bounty = e.type.bounty[0] +
+        Math.floor(Math.random() * (e.type.bounty[1] - e.type.bounty[0] + 1));
+      PD.credits += bounty;
+      window.Game.uiToast('+' + bounty + ' CR bounty · ' + e.type.name);
+      PD.save();
+      if(window.Game.onPirateKill) window.Game.onPirateKill(true);
+      this.scene.remove(e.mesh);
+      const idx = this.pirates.indexOf(e);
+      if(idx >= 0) this.pirates.splice(idx, 1);
     },
 
     _hit(pos){
@@ -878,17 +1030,7 @@
               if(l.mesh.position.distanceTo(e.mesh.position) < 6){
                 e.hp -= l.dmg;
                 this._hit(l.mesh.position);
-                if(e.hp <= 0){
-                  this._spawnExplosion(e.mesh.position, true);
-                  window.GameAudio.bigBoom();
-                  const bounty = 40 + Math.floor(Math.random() * 60);
-                  PD.credits += bounty;
-                  window.Game.uiToast('+' + bounty + ' CR bounty');
-                  PD.save();
-                  if(window.Game.onPirateKill) window.Game.onPirateKill(true);
-                  this.scene.remove(e.mesh);
-                  this.pirates.splice(p, 1);
-                }
+                if(e.hp <= 0) this._killPirate(e);
                 hit = true;
                 break;
               }
@@ -944,6 +1086,7 @@
           const dblink = 0.35 + 0.65 * Math.abs(Math.sin(t * 18));
           if(e.beacon) e.beacon.material.opacity = dblink;
           if(e.halo) e.halo.material.opacity = 0.05 + dblink * 0.15;
+          if(e.tail) e.tail.material.opacity = 0.12 + 0.1 * Math.abs(Math.sin(t * 12));
           if(e.plight) e.plight.intensity = 0.2 + dblink * 0.4;
           continue;
         }
@@ -951,18 +1094,31 @@
         const dist = toShip.length();
         toShip.normalize();
         const desired = toShip.multiplyScalar(Math.max(0, dist - 60) * 1.1);
-        e.vel.lerp(desired.clampLength(0, 55), 0.03);
+        e.vel.lerp(desired.clampLength(0, e.type.speed), 0.03);
         e.mesh.position.addScaledVector(e.vel, dt);
         e.mesh.lookAt(this.ship.position);
+        // dynamic bank: each hull sways in flight, stalkers lean harder
+        const sway = e.type.key === 'stalker' ? 0.22 : e.type.key === 'warlord' ? 0.05 : 0.1;
+        e.bank += ((Math.sin(t * 1.2 + e.seed) * sway) - e.bank) * 0.05;
+        e.mesh.rotation.z = e.bank;
         // beacon blink + engine pulse keep them visible in dark nebula sectors
         const blink = 0.55 + 0.45 * Math.sin(t * 9 + e.hp);
         if(e.beacon) e.beacon.material.opacity = blink;
         if(e.halo) e.halo.material.opacity = 0.14 + blink * 0.22;
-        if(e.plight) e.plight.intensity = 0.35 + blink * 0.55;
+        if(e.tail) e.tail.material.opacity = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(t * 7 + e.seed));
+        // distance LOD: drop blink lights far out (they are invisible at range)
+        const far = dist > 900;
+        if(e.far !== far){
+          e.far = far;
+          if(e.beacon) e.beacon.visible = !far;
+          if(e.halo) e.halo.visible = !far;
+          if(e.plight) e.plight.intensity = far ? 0 : 0.7;
+        }
+        if(e.plight && !far) e.plight.intensity = 0.35 + blink * 0.55;
         e.fireT -= dt;
-        if(e.fireT <= 0 && dist < 380){
-          e.fireT = 1.1 + Math.random() * 0.8;
-          this._enemyFire(e);
+        if(e.fireT <= 0 && dist < e.type.range){
+          e.fireT = e.type.fire[0] + Math.random() * (e.type.fire[1] - e.type.fire[0]);
+          this._enemyFire(e, e.type.dmg);
         }
       }
 
@@ -1085,7 +1241,9 @@
         const dist = p.mesh.position.distanceTo(this.ship.position);
         v.copy(p.mesh.position).project(this.camera);
         if(v.z < 1) out.push({ id: 'p' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate',
-          name: 'VOID RAIDER', kind: 'HOSTILE', value: 'BOUNTY 40-100 CR', dist, size: radToSize(5, dist) });
+          name: p.type.name, kind: 'HOSTILE',
+          value: 'BOUNTY ' + p.type.bounty[0] + '-' + p.type.bounty[1] + ' CR',
+          dist, size: radToSize(5 * p.type.scale, dist) });
       }
       for(let i = 0; i < this.planetMeshes.length; i++){
         const d = window.PLANETS[i];

@@ -59,6 +59,21 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
     (280u radius) and disable raiders without killing them
   3 contracts max; completion pays automatically on arrival / kill / disable.
 
+## Raider Archetypes
+Pirates are drawn from four hulls, each with its own silhouette, procedural panel
+texture, palette, engine glow, banking behaviour and combat profile:
+
+| Raider | Role | Speed | Damage | Armour | Bounty |
+|---|---|---|---|---|---|
+| Void Raider | baseline all-rounder | 55 | 7 | moderate | 40–100 |
+| Void Stalker | fast interceptor, fragile | 78 | 5 | light | 35–65 |
+| Void Marauder | gunship, heavy fire | 40 | 9 | heavy | 70–120 |
+| Void Warlord | slow brawler (weapon L2+) | 30 | 13 | very heavy | 150–220 |
+
+Heavier hulls stay rare and are gated behind your weapon level, so encounters
+escalate as you upgrade. Blinking beacons, halos and point lights fade out at
+long range (LOD) and every destroyed raider pays its own type-specific bounty.
+
 ## Quick Travel
 - Fully scan a planet or station (lock ring completes) and a prompt appears:
   **press `Q` to warp** straight to it — twin-engine spool, speed streaks, synced
