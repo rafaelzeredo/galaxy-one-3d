@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GALAXY ONE — 3D Space &amp; Planet Survival</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="space3d"></canvas>
+    <canvas id="hud2d"></canvas>
+
+    <div id="crosshair" class="hidden">
+      <div class="ch-dot"></div><div class="ch-h"></div><div class="ch-v"></div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div id="hud-tl" class="panel">
+        <div class="bar-label">HULL <span id="hp-txt"></span></div>
+        <div class="bar"><div id="hp-bar" class="fill green"></div></div>
+        <div class="bar-label">SHIELD <span id="sh-txt"></span></div>
+        <div class="bar"><div id="sh-bar" class="fill cyan"></div></div>
+        <div class="bar-label" id="spd-label"><span id="spd-lbl">SPEED </span><span id="spd-txt"></span></div>
+        <div class="bar"><div id="spd-bar" class="fill amber"></div></div>
+      </div>
+      <div id="hud-tr" class="panel">
+        <div class="credits">◈ <span id="credits-txt">0</span> CR</div>
+        <div id="cargo-lines"></div>
+        <div class="bar-label" id="cargo-label">CARGO <span id="cargo-txt"></span></div>
+        <div class="bar thin"><div id="cargo-bar" class="fill violet"></div></div>
+      </div>
+      <div id="hud-bl" class="panel mini" id2="medkit">
+        <div id="medkit-txt">MEDKIT ×0 <span class="key">[H]</span></div>
+      </div>
+      <div id="hud-prompt" class="hidden"></div>
+      <div id="toasts"></div>
+    </div>
+
+    <div id="menu" class="hidden">
+      <div id="menu-inner" class="panel"></div>
+    </div>
+
+    <div id="screen-start" class="screen">
+      <div class="title-card">
+        <h1>GALAXY<span class="accent">ONE</span></h1>
+        <p class="tagline">Trade · Mine · Survive</p>
+        <div class="keys-grid">
+          <div><b>MOUSE</b><span>steer ship</span></div>
+          <div><b>W / S</b><span>thrust / brake</span></div>
+          <div><b>SPACE</b><span>fire lasers</span></div>
+          <div><b>E</b><span>land · dock · harvest</span></div>
+          <div><b>WASD</b><span>walk (planet)</span></div>
+          <div><b>R</b><span>take off (planet)</span></div>
+          <div><b>H</b><span>use medkit</span></div>
+          <div><b>M</b><span>mute</span></div>
+        </div>
+        <p class="hint">Fly close to a planet and press <b>E</b> to land. Dock at the station to sell &amp; upgrade.</p>
+        <button id="btn-start">LAUNCH ENGINE</button>
+      </div>
+    </div>
+
+    <div id="fade"></div>
+    <div id="error-log"></div>
+  </div>
+
+  <script src="lib/three.min.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/space3d.js"></script>
+  <script src="js/planet2d.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
