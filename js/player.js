@@ -46,7 +46,7 @@
     hp: 100, shield: 0, credits: 400, medkits: 1,
     cargo: { ore: 0, wood: 0, crystal: 0, goo: 0 },
     trade: { food: 0, tech: 0, med: 0, lux: 0 },
-    up: { weapon: 1, engine: 1, hull: 1, shield: 1 },
+    up: { weapon: 1, engine: 1, hull: 1, shield: 1, scanner: 1 },
     spaceSaved: null,           // ship pos/quat while landed
     planetIndex: 0,
     alive: true,
@@ -57,6 +57,8 @@
     fireDelay(){ return Math.max(0.09, 0.3 - this.up.weapon * 0.04); },
     thrust(){ return 34 + this.up.engine * 16; },
     maxSpeed(){ return 70 + this.up.engine * 26; },
+    // Target scanner: L1 = 3.0s to lock, each level shaves it down to 0.5s at L5.
+    scannerLockTime(){ return Math.max(0.5, 3 - (this.up.scanner - 1) * 0.625); },
     cargoMax(){ return 40 + this.up.hull * 10; },
     cargoUsed(){
       let n = 0;

@@ -88,7 +88,9 @@
     takeoff(){ this.noise(1.1, 0.4, 300, 2200); this.tone(90, 1.0, 'sawtooth', 0.2, 400); },
     land(){ this.noise(0.8, 0.35, 2200, 200); this.tone(300, 0.7, 'sawtooth', 0.18, 70); },
     warp(){ this.tone(200, 0.7, 'sine', 0.2, 1400); this.noise(0.7, 0.2, 1200, 3000); },
-    alarm(){ this.tone(440, 0.25, 'square', 0.15, 220); this.tone(440, 0.25, 'square', 0.15, 220, 0.3); }
+    alarm(){ this.tone(440, 0.25, 'square', 0.15, 220); this.tone(440, 0.25, 'square', 0.15, 220, 0.3); },
+    // scanner lock acquired
+    lock(){ this.tone(600, 0.08, 'square', 0.1); this.tone(900, 0.1, 'square', 0.12, 1200, 0.08); this.tone(1200, 0.14, 'sine', 0.12, 1600, 0.18); }
   };
   window.GameAudio = A;
 })();

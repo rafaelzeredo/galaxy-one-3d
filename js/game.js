@@ -334,10 +334,11 @@
       uh.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP UPGRADES</div>';
       m.appendChild(uh);
       const ups = [
-        { k: 'weapon', name: 'Laser Cannon',  desc: 'damage & fire rate', cost: l => 220 + l * 180 },
-        { k: 'engine', name: 'Ion Engine',    desc: 'thrust & max speed', cost: l => 180 + l * 150 },
-        { k: 'hull',   name: 'Hull Plating',  desc: 'max hull & cargo',   cost: l => 200 + l * 160 },
-        { k: 'shield', name: 'Deflector Grid',desc: 'regenerating shield',cost: l => 260 + l * 200 }
+        { k: 'weapon',  name: 'Laser Cannon',   desc: 'damage & fire rate', cost: l => 220 + l * 180 },
+        { k: 'engine',  name: 'Ion Engine',     desc: 'thrust & max speed', cost: l => 180 + l * 150 },
+        { k: 'hull',    name: 'Hull Plating',   desc: 'max hull & cargo',   cost: l => 200 + l * 160 },
+        { k: 'shield',  name: 'Deflector Grid', desc: 'regenerating shield',cost: l => 260 + l * 200 },
+        { k: 'scanner', name: 'Target Scanner', desc: 'faster lock-on (L1 3.0s → L5 0.5s)', cost: l => 240 + l * 170 }
       ];
       for(const u of ups){
         const lvl = window.PD.up[u.k];
@@ -499,48 +500,87 @@
       // Only clear in space mode — clearing here wiped the 2D world every frame.
       if(this.state === 'space') ctx.clearRect(0, 0, vw, vh);
       if(this.state === 'space' && !this.menuOpenNow){
-        // target brackets (GOF2 style corner brackets, size-matched, distance below)
-        const targets = window.Space.getScreenTargets();
-        ctx.font = '10px "Trebuchet MS", sans-serif';
-        ctx.textAlign = 'center';
-        for(const t of targets){
-          const x = t.x * vw, y = t.y * vh;
-          let col = null, size = t.size || 12, label = '';
-          if(t.type === 'ore'){ col = 'rgba(154,210,255,0.8)'; }
-          else if(t.type === 'pirate'){ col = 'rgba(255,95,122,0.95)'; label = 'PIRATE'; }
-          else if(t.type === 'planet'){ col = 'rgba(95,240,255,0.9)'; label = t.label; }
-          else if(t.type === 'station'){ col = 'rgba(255,212,121,0.9)'; label = t.label; }
-          if(!col || t.dist > 3200) continue;
-          size = Math.max(9, Math.min(110, size));
-          ctx.strokeStyle = col;
-          ctx.lineWidth = 1.4;
-          const s = size, g = Math.min(7, s * 0.4); // corner tick length
+        const S = window.Space;
+        const hov = S.hover;
+        const cx = vw / 2, cy = vh / 2;
+
+        // lock-on progress ring around the crosshair
+        if(hov && !S.locked){
+          const pct = Math.min(1, S.lockT / S.lockNeed);
+          ctx.strokeStyle = 'rgba(95,240,255,0.9)';
+          ctx.lineWidth = 3;
           ctx.beginPath();
-          // 4 corner brackets
-          ctx.moveTo(x - s, y - s + g); ctx.lineTo(x - s, y - s); ctx.lineTo(x - s + g, y - s);
-          ctx.moveTo(x + s - g, y - s); ctx.lineTo(x + s, y - s); ctx.lineTo(x + s, y - s + g);
-          ctx.moveTo(x + s, y + s - g); ctx.lineTo(x + s, y + s); ctx.lineTo(x + s - g, y + s);
-          ctx.moveTo(x - s + g, y + s); ctx.lineTo(x - s, y + s); ctx.lineTo(x - s, y + s - g);
+          ctx.arc(cx, cy, 30, -1.5708, -1.5708 + pct * 6.283);
           ctx.stroke();
-          if(label){
-            ctx.fillStyle = col;
-            ctx.fillText(label, x, y - s - 5);
-          }
-          // distance readout below the bracket
-          if(t.dist > 25){
-            ctx.fillStyle = 'rgba(223,239,255,0.75)';
-            ctx.fillText(Math.round(t.dist) + 'm', x, y + s + 12);
-          }
+          ctx.strokeStyle = 'rgba(95,240,255,0.18)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(cx, cy, 30, 0, 6.283); ctx.stroke();
+          ctx.fillStyle = 'rgba(223,239,255,0.85)';
+          ctx.font = 'bold 10px "Trebuchet MS", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('LOCKING ' + Math.round(pct * 100) + '%', cx, cy + 52);
         }
+
+        // hovered target: brackets + info panel (Name / Type / Distance / Value)
+        if(hov){
+          const x = hov.x * vw, y = hov.y * vh;
+          const col = S.locked ? 'rgba(255,184,77,0.95)' :
+            hov.type === 'pirate' ? 'rgba(255,95,122,0.9)' :
+            hov.type === 'station' ? 'rgba(255,212,121,0.8)' :
+            hov.type === 'planet' ? 'rgba(95,240,255,0.8)' : 'rgba(154,210,255,0.75)';
+          const size = Math.max(9, Math.min(110, hov.size || 12));
+          const g = Math.min(8, size * 0.4);
+          ctx.strokeStyle = col;
+          ctx.lineWidth = S.locked ? 2 : 1.3;
+          ctx.beginPath();
+          ctx.moveTo(x - size, y - size + g); ctx.lineTo(x - size, y - size); ctx.lineTo(x - size + g, y - size);
+          ctx.moveTo(x + size - g, y - size); ctx.lineTo(x + size, y - size); ctx.lineTo(x + size, y - size + g);
+          ctx.moveTo(x + size, y + size - g); ctx.lineTo(x + size, y + size); ctx.lineTo(x + size - g, y + size);
+          ctx.moveTo(x - size + g, y + size); ctx.lineTo(x - size, y + size); ctx.lineTo(x - size, y + size - g);
+          ctx.stroke();
+          if(S.locked){ // rotating lock ring
+            const a0 = (performance.now() / 700) % 6.283;
+            ctx.strokeStyle = 'rgba(255,184,77,0.6)';
+            ctx.lineWidth = 1.6;
+            for(let k = 0; k < 4; k++){
+              ctx.beginPath();
+              ctx.arc(x, y, size + 5, a0 + k * 1.5708, a0 + k * 1.5708 + 0.9);
+              ctx.stroke();
+            }
+          }
+          // info panel to the right of the bracket
+          ctx.font = '10px "Trebuchet MS", sans-serif';
+          ctx.textAlign = 'left';
+          const px = x + size + 12, py = y - 24;
+          const lines = [
+            [hov.name || 'TARGET', col],
+            [hov.kind || '', 'rgba(143,198,216,0.9)'],
+            ['DIST ' + Math.round(hov.dist) + 'm', 'rgba(223,239,255,0.8)'],
+            [hov.value || '', 'rgba(255,212,121,0.85)']
+          ];
+          const bw = Math.max.apply(null, lines.map(l => ctx.measureText(l[0]).width)) + 14;
+          ctx.fillStyle = 'rgba(6,16,34,0.72)';
+          ctx.fillRect(px, py, bw, 52);
+          ctx.strokeStyle = 'rgba(95,240,255,0.35)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px, py, bw, 52);
+          lines.forEach((l, i) => {
+            ctx.fillStyle = l[1];
+            ctx.font = (i === 0 ? 'bold ' : '') + (i === 0 ? 11 : 9.5) + 'px "Trebuchet MS", sans-serif';
+            ctx.fillText(l[0], px + 7, py + 14 + i * 12);
+          });
+        }
+
         // off-screen pirate warning arrows
+        const targets = S._targets || [];
         for(const t of targets){
           if(t.type !== 'pirate' || t.dist > 3200) continue;
           if(t.x > -0.05 && t.x < 1.05 && t.y > -0.05 && t.y < 1.05) continue;
-          const cx = Math.max(20, Math.min(vw - 20, t.x * vw));
-          const cy = Math.max(20, Math.min(vh - 20, t.y * vh));
+          const cxp = Math.max(20, Math.min(vw - 20, t.x * vw));
+          const cyp = Math.max(20, Math.min(vh - 20, t.y * vh));
           ctx.fillStyle = 'rgba(255,95,122,0.8)';
           ctx.beginPath();
-          ctx.arc(cx, cy, 5, 0, 6.283);
+          ctx.arc(cxp, cyp, 5, 0, 6.283);
           ctx.fill();
         }
       }

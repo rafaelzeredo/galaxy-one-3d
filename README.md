@@ -17,17 +17,22 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
 
 1. Fly in 3D space (mouse steers, `W/S` throttle, `A/D` yaw assist, `SPACE` lasers).
    Pitch + yaw only, with auto-level — the ship can't end up upside-down.
+   Lasers fire toward the crosshair (converging camera ray).
 2. Shoot asteroids → collect floating ore. Fight pirates. Earn credits.
-3. Dock at the central station (`E` when prompted):
+3. Targeting: hover the crosshair over an object to see its bracket + info panel
+   (name / type / distance / value). Hold the crosshair on a target to **lock on** —
+   a progress ring fills around the crosshair and a chirp confirms the lock.
+   The **Target Scanner** upgrade speeds it up (L1 = 3.0s → L5 = 0.5s).
+4. Dock at the central station (`E` when prompted):
    - **SHIPYARD** tab — sell raw cargo, buy medkits & ship upgrades
-     (weapon / engine / hull / shield).
+     (weapon / engine / hull / shield / scanner).
    - **TRADE** tab — commodity exchange (Food, Tech, Med Supplies, Luxury Goods).
      Every market prices differently; buy low, fly, sell high.
-4. Fly near a planet, press `E` to land.
-5. On the surface (2D top-down): `WASD` walk, mouse-aim + `SPACE`/click to shoot,
-   `E` to chop trees / mine crystals / talk to traders, `H` for medkit.
-   Colonist outposts also run a commodity exchange.
-6. Press `R` near your landed ship to take off again.
+5. Fly near a planet, press `E` to land.
+6. On the surface (2D top-down): `WASD` walk, `SPACE`/click to shoot — the survivor
+   **auto-aims at the nearest hostile**, `E` to chop trees / mine crystals / talk to
+   traders, `H` for medkit. Colonist outposts also run a commodity exchange.
+7. Press `R` near your landed ship to take off again.
 
 ## Planets
 
@@ -41,8 +46,10 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
 ## Tech
 
 Plain HTML5 + Canvas + vanilla JS. Three.js (r128) for the 3D mode, stored
-locally in `lib/`. All graphics are procedurally generated in code; all audio
-is synthesized with the Web Audio API. No external URLs, no image/model/audio
+locally in `lib/`. All graphics are procedurally generated in code — canvas
+textures for rocky asteroids, planet surfaces & cloud shells, a nebula
+starfield dome, particle engine trails and glow effects; all audio is
+synthesized with the Web Audio API. No external URLs, no image/model/audio
 files, no CDNs.
 
 ## Files
