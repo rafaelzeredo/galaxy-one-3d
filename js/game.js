@@ -98,8 +98,8 @@
 
     _toSpace(fresh){
       this.state = 'space';
-      this.els.space.style.zIndex = 0;
-      this.els.hud.style.zIndex = 1;
+      this.els.space.classList.remove('hidden');
+      this.els.hud.classList.remove('hidden');
       this.menuClose();
       window.Planet.exit();
       window.Space.enter();
@@ -115,6 +115,9 @@
       this._fade(() => {
         this.state = 'planet';
         window.Space.exit();
+        // hide the WebGL canvas entirely so no stale 3D frame can show through
+        this.els.space.classList.add('hidden');
+        this.els.hud.classList.remove('hidden');
         this.els.cross.classList.add('hidden');
         window.Planet.enter(planetIdx);
         this.els.hud.style.pointerEvents = 'none';
@@ -169,6 +172,7 @@
 
     // ---------- menus ----------
     menuOpenNow: false,
+    menuTab: 'shipyard', // station tabs: shipyard | trade
     openStation(){
       if(this.menuOpenNow) return;
       this.menuOpenNow = true;
@@ -204,12 +208,98 @@
       right.appendChild(row);
       return row;
     },
+    _tabs(m, tabs, active, cb){
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-bottom:12px';
+      for(const t of tabs){
+        const b = document.createElement('button');
+        b.className = 'menu-btn';
+        b.textContent = t.label;
+        if(t.id === active) b.style.background = 'rgba(95,240,255,.35)';
+        b.addEventListener('click', () => cb(t.id));
+        bar.appendChild(b);
+      }
+      m.appendChild(bar);
+    },
+
+    // price landscape line: every market's unit price for a good
+    _priceLine(good){
+      const parts = [];
+      for(const mk in window.TRADE_MARKETS){
+        const reachable = mk === 'station' || mk === 'p0' || mk === 'p1';
+        parts.push(window.MARKET_NAMES[mk] + ' ' +
+          (reachable ? window.PD.tradeBuyPrice(good, mk) : '—'));
+      }
+      return parts.join(' · ');
+    },
 
     _renderStation(){
       const PD = window.PD;
       const m = this.els.menuInner;
-      m.innerHTML = '<h2>ORION STATION</h2><div class="sub">Trade &amp; Shipyard — ◈ ' + window.PD.credits + ' CR</div>';
-      // sell section
+      m.innerHTML = '<h2>ORION STATION</h2><div class="sub">◈ ' + PD.credits + ' CR · cargo ' +
+        PD.cargoUsed() + '/' + PD.cargoMax() + '</div>';
+      this._tabs(m, [{ id: 'shipyard', label: 'SHIPYARD' }, { id: 'trade', label: 'TRADE' }],
+        this.menuTab, id => { this.menuTab = id; window.GameAudio.uiClick(); this._renderStation(); });
+
+      if(this.menuTab === 'trade'){
+        const h = document.createElement('div');
+        h.innerHTML = '<div class="bar-label" style="margin-bottom:6px">COMMODITY EXCHANGE <span>buy low · sell high</span></div>';
+        m.appendChild(h);
+        for(const g in window.TRADE_GOODS){
+          const def = window.TRADE_GOODS[g];
+          const buy = PD.tradeBuyPrice(g, 'station');
+          const sell = PD.tradeSellPrice(g, 'station');
+          const held = PD.trade[g] | 0;
+          const row = document.createElement('div');
+          row.className = 'menu-row';
+          row.innerHTML =
+            '<div class="name">' + def.name +
+              (held ? ' ×' + held : '') +
+              '<small>' + this._priceLine(g) + '</small></div>' +
+            '<div class="price">buy ' + buy + '<br>sell ' + sell + '</div>';
+          const buyBtn = document.createElement('button');
+          buyBtn.className = 'menu-btn';
+          buyBtn.textContent = 'BUY 10';
+          buyBtn.disabled = PD.credits < buy * 10 || PD.cargoUsed() >= PD.cargoMax();
+          buyBtn.addEventListener('click', () => {
+            const got = PD.buyTradeGood(g, 'station', 10);
+            if(got > 0){ window.GameAudio.coin(); PD.save(); }
+            else window.GameAudio.uiClick();
+            this._renderStation();
+          });
+          const sellBtn = document.createElement('button');
+          sellBtn.className = 'menu-btn';
+          sellBtn.textContent = 'SELL ALL';
+          sellBtn.style.marginLeft = '6px';
+          sellBtn.disabled = held <= 0;
+          sellBtn.addEventListener('click', () => {
+            const n = PD.sellTradeGood(g, 'station', held);
+            if(n > 0){ window.GameAudio.coin(); PD.save(); }
+            this._renderStation();
+          });
+          const wrap = document.createElement('div');
+          wrap.style.display = 'flex';
+          wrap.appendChild(buyBtn);
+          wrap.appendChild(sellBtn);
+          row.appendChild(wrap);
+          m.appendChild(row);
+        }
+        const d = document.createElement('div');
+        d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
+        d.textContent = 'Colonists on Terra Prime & Verdant trade at different prices.';
+        m.appendChild(d);
+      } else {
+        this._renderShipyard(m);
+      }
+      const close = document.createElement('button');
+      close.className = 'menu-btn menu-close';
+      close.textContent = 'UNDOCK  [E]';
+      close.addEventListener('click', () => this.menuClose());
+      m.appendChild(close);
+    },
+
+    _renderShipyard(m){
+      const PD = window.PD;
       const sellH = document.createElement('div');
       sellH.innerHTML = '<div class="bar-label" style="margin-bottom:6px">SELL CARGO</div>';
       m.appendChild(sellH);
@@ -267,23 +357,63 @@
             this._renderStation();
           }, window.PD.credits < cost);
       }
-      const close = document.createElement('button');
-      close.className = 'menu-btn menu-close';
-      close.textContent = 'UNDOCK  [E]';
-      close.addEventListener('click', () => this.menuClose());
-      m.appendChild(close);
     },
 
     _renderTrade(){
       const PD = window.PD;
       const m = this.els.menuInner;
-      m.innerHTML = '<h2>COLONIST OUTPOST</h2><div class="sub">"Fresh supplies, off-worlder." — ◈ ' + window.PD.credits + ' CR</div>';
-      const st = window.Planet.state;
-      const pt = window.Planet.planet.type;
+      const mk = 'p' + window.PD.planetIndex;
+      m.innerHTML = '<h2>COLONIST OUTPOST</h2><div class="sub">"Fresh supplies, off-worlder." — ◈ ' +
+        window.PD.credits + ' CR · cargo ' + PD.cargoUsed() + '/' + PD.cargoMax() + '</div>';
+      // commodity exchange at planet prices
+      const gh = document.createElement('div');
+      gh.innerHTML = '<div class="bar-label" style="margin-bottom:6px">COMMODITY EXCHANGE</div>';
+      m.appendChild(gh);
+      for(const g in window.TRADE_GOODS){
+        const def = window.TRADE_GOODS[g];
+        const buy = PD.tradeBuyPrice(g, mk);
+        const sell = PD.tradeSellPrice(g, mk);
+        const held = PD.trade[g] | 0;
+        const row = document.createElement('div');
+        row.className = 'menu-row';
+        row.innerHTML =
+          '<div class="name">' + def.name + (held ? ' ×' + held : '') +
+            '<small>' + this._priceLine(g) + '</small></div>' +
+          '<div class="price">buy ' + buy + '<br>sell ' + sell + '</div>';
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'menu-btn';
+        buyBtn.textContent = 'BUY 10';
+        buyBtn.disabled = PD.credits < buy * 10 || PD.cargoUsed() >= PD.cargoMax();
+        buyBtn.addEventListener('click', () => {
+          const got = PD.buyTradeGood(g, mk, 10);
+          if(got > 0){ window.GameAudio.coin(); PD.save(); }
+          else window.GameAudio.uiClick();
+          this._renderTrade();
+        });
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'menu-btn';
+        sellBtn.textContent = 'SELL ALL';
+        sellBtn.style.marginLeft = '6px';
+        sellBtn.disabled = held <= 0;
+        sellBtn.addEventListener('click', () => {
+          const n = PD.sellTradeGood(g, mk, held);
+          if(n > 0){ window.GameAudio.coin(); PD.save(); }
+          this._renderTrade();
+        });
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex';
+        wrap.appendChild(buyBtn);
+        wrap.appendChild(sellBtn);
+        row.appendChild(wrap);
+        m.appendChild(row);
+      }
+      const sh = document.createElement('div');
+      sh.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SURFACE GOODS</div>';
+      m.appendChild(sh);
       for(const k in window.COMMS){
         const n = window.PD.cargo[k] | 0;
         if(n <= 0) continue;
-        const price = window.PD.priceSell(k, pt);
+        const price = window.PD.priceSell(k, window.Planet.planet.type);
         this._row(m, window.COMMS[k].name + ' ×' + n, 'local price ' + price + ' CR',
           (price * n) + ' CR', 'SELL ALL', () => {
             window.PD.credits += price * n;
@@ -326,6 +456,7 @@
       const PD = window.PD;
       const parts = [];
       for(const k in window.PD.cargo) if(window.PD.cargo[k] > 0) parts.push(window.COMMS[k].name.split(' ')[0] + ' ×' + window.PD.cargo[k]);
+      for(const k in window.PD.trade) if(window.PD.trade[k] > 0) parts.push(window.TRADE_GOODS[k].name.split(' ')[0] + ' ×' + window.PD.trade[k]);
       return parts.length ? parts.join(' · ') : 'hold empty';
     },
 
@@ -364,31 +495,46 @@
     _renderHudCanvas(){
       const ctx = this.hudCtx;
       const vw = ctx.canvas.width, vh = ctx.canvas.height;
-      ctx.clearRect(0, 0, vw, vh);
+      // In planet mode Planet.render owns the full canvas (terrain already painted).
+      // Only clear in space mode — clearing here wiped the 2D world every frame.
+      if(this.state === 'space') ctx.clearRect(0, 0, vw, vh);
       if(this.state === 'space' && !this.menuOpenNow){
-        // target brackets (GOF2 style)
+        // target brackets (GOF2 style corner brackets, size-matched, distance below)
         const targets = window.Space.getScreenTargets();
-        ctx.lineWidth = 1.4;
         ctx.font = '10px "Trebuchet MS", sans-serif';
         ctx.textAlign = 'center';
         for(const t of targets){
           const x = t.x * vw, y = t.y * vh;
-          let col = null, size = 12, label = '';
-          if(t.type === 'ore'){ col = 'rgba(154,210,255,0.8)'; size = 10; }
-          else if(t.type === 'pirate'){ col = 'rgba(255,95,122,0.9)'; size = 14; label = 'PIRATE'; }
-          else if(t.type === 'planet'){ col = 'rgba(95,240,255,0.9)'; size = 18; label = t.label; }
-          else if(t.type === 'station'){ col = 'rgba(255,212,121,0.9)'; size = 18; label = t.label; }
-          if(!col || t.dist > 2600) continue;
+          let col = null, size = t.size || 12, label = '';
+          if(t.type === 'ore'){ col = 'rgba(154,210,255,0.8)'; }
+          else if(t.type === 'pirate'){ col = 'rgba(255,95,122,0.95)'; label = 'PIRATE'; }
+          else if(t.type === 'planet'){ col = 'rgba(95,240,255,0.9)'; label = t.label; }
+          else if(t.type === 'station'){ col = 'rgba(255,212,121,0.9)'; label = t.label; }
+          if(!col || t.dist > 3200) continue;
+          size = Math.max(9, Math.min(110, size));
           ctx.strokeStyle = col;
-          ctx.strokeRect(x - size, y - size, size * 2, size * 2);
-          if(label && t.dist < 1800){
+          ctx.lineWidth = 1.4;
+          const s = size, g = Math.min(7, s * 0.4); // corner tick length
+          ctx.beginPath();
+          // 4 corner brackets
+          ctx.moveTo(x - s, y - s + g); ctx.lineTo(x - s, y - s); ctx.lineTo(x - s + g, y - s);
+          ctx.moveTo(x + s - g, y - s); ctx.lineTo(x + s, y - s); ctx.lineTo(x + s, y - s + g);
+          ctx.moveTo(x + s, y + s - g); ctx.lineTo(x + s, y + s); ctx.lineTo(x + s - g, y + s);
+          ctx.moveTo(x - s + g, y + s); ctx.lineTo(x - s, y + s); ctx.lineTo(x - s, y + s - g);
+          ctx.stroke();
+          if(label){
             ctx.fillStyle = col;
-            ctx.fillText(label + ' · ' + Math.round(t.dist), x, y - size - 5);
+            ctx.fillText(label, x, y - s - 5);
+          }
+          // distance readout below the bracket
+          if(t.dist > 25){
+            ctx.fillStyle = 'rgba(223,239,255,0.75)';
+            ctx.fillText(Math.round(t.dist) + 'm', x, y + s + 12);
           }
         }
         // off-screen pirate warning arrows
         for(const t of targets){
-          if(t.type !== 'pirate' || t.dist > 2600) continue;
+          if(t.type !== 'pirate' || t.dist > 3200) continue;
           if(t.x > -0.05 && t.x < 1.05 && t.y > -0.05 && t.y < 1.05) continue;
           const cx = Math.max(20, Math.min(vw - 20, t.x * vw));
           const cy = Math.max(20, Math.min(vh - 20, t.y * vh));
@@ -399,7 +545,7 @@
         }
       }
       if(this.state === 'planet'){
-        // top-center location banner
+        // top-center location banner (drawn over the world, no clearing)
         ctx.font = 'bold 13px "Trebuchet MS", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(95,240,255,0.85)';

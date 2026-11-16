@@ -374,6 +374,9 @@
       if(!this.active || !this.state) return;
       const G = window.Game;
       const vw = ctx.canvas.width, vh = ctx.canvas.height;
+      // opaque backdrop covers the entire viewport (incl. beyond-world strips)
+      ctx.fillStyle = '#04070d';
+      ctx.fillRect(0, 0, vw, vh);
       const p = this.player, st = this.state;
       const camX = Math.max(vw/2, Math.min(WORLD - vw/2, p.x));
       const camY = Math.max(vh/2, Math.min(WORLD - vh/2, p.y));

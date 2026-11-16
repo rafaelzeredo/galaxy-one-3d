@@ -289,15 +289,30 @@
       const t = performance.now() / 1000;
 
       // steering: mouse offset from center = turn rate (GOF2 virtual-stick feel)
+      // No roll input: yaw + pitch only, with auto-level to prevent upside-down drift.
       const mx = inp.mouseX, my = inp.mouseY; // normalized -1..1
       const dead = 0.06;
       const steer = v => Math.abs(v) < dead ? 0 : (v - Math.sign(v) * dead) / (1 - dead);
-      const yawRate = steer(mx) * -1.6;
-      const pitchRate = steer(my) * -1.25;
-      const rollRate = (inp.keys.has('KeyA') ? 1 : 0) - (inp.keys.has('KeyD') ? 1 : 0);
+      const keyYaw = (inp.keys.has('KeyD') ? 1 : 0) - (inp.keys.has('KeyA') ? 1 : 0);
+      const keyPitch = (inp.keys.has('ArrowDown') ? 1 : 0) - (inp.keys.has('ArrowUp') ? 1 : 0);
+      const yawRate = steer(mx) * -1.6 - keyYaw * 1.15;
+      const pitchRate = steer(my) * -1.25 + keyPitch * 0.9;
       this.ship.rotateY(yawRate * dt);
       this.ship.rotateX(pitchRate * dt);
-      this.ship.rotateZ(rollRate * dt * 1.8);
+
+      // auto-level: damp any roll so the ship never flies inverted / flips controls
+      const fwdLvl = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
+      if(Math.abs(fwdLvl.y) < 0.96){
+        const up = V3(0, 1, 0).applyQuaternion(this.ship.quaternion);
+        const des = V3(0, 1, 0).addScaledVector(fwdLvl, -fwdLvl.y).normalize();
+        const rollErr = Math.atan2(
+          new THREE.Vector3().crossVectors(up, des).dot(fwdLvl),
+          up.dot(des)
+        );
+        if(Math.abs(rollErr) > 0.001){
+          this.ship.rotateZ(-Math.max(-1.4, Math.min(1.4, rollErr)) * Math.min(1, 4 * dt));
+        }
+      }
 
       // thrust
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
@@ -344,7 +359,7 @@
                 for(let d = 0; d < drops; d++){
                   const ore = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 0),
                     new THREE.MeshBasicMaterial({ color: 0x9ad2ff }));
-                  ore.position.copy(ast.mesh.position).add(V3((Math.random()-0.5)*10, (Math.random()-0.5)*10, (Math.random()-0.5)*10));
+                  ore.position.copy(ast.mesh.position).add(V3((Math.random()-0.5)*6, (Math.random()-0.5)*6, (Math.random()-0.5)*6));
                   this.oreDrops.push({ mesh: ore, vel: V3((Math.random()-0.5)*12, (Math.random()-0.5)*12, (Math.random()-0.5)*12), life: 30 });
                   this.scene.add(ore);
                 }
@@ -395,7 +410,7 @@
         o.vel.multiplyScalar(1 - 0.5 * dt);
         o.mesh.rotation.x += dt; o.mesh.rotation.y += dt * 1.4;
         if(o.life <= 0){ this.scene.remove(o.mesh); this.oreDrops.splice(i, 1); continue; }
-        if(o.mesh.position.distanceTo(this.ship.position) < 20){
+        if(o.mesh.position.distanceTo(this.ship.position) < 26){
           const got = PD.addItem('ore', 1);
           if(got > 0){
             window.GameAudio.pickup();
@@ -499,26 +514,34 @@
       if(this.ready && this.active) this.renderer.render(this.scene, this.camera);
     },
 
-    // Screen-space target brackets for the 2D HUD layer
+    // Screen-space target brackets for the 2D HUD layer.
+    // size = projected on-screen radius of the object (accurate lock-on).
     getScreenTargets(){
       const out = [];
       if(!this.active) return out;
       const v = new THREE.Vector3();
+      const vh = window.innerHeight;
+      const projScale = (vh * 0.5) / Math.tan(this.camera.fov * Math.PI / 360);
+      const radToSize = (radius, dist) => radius / Math.max(1, dist) * projScale;
       for(const a of this.asteroids){
+        const dist = a.mesh.position.distanceTo(this.ship.position);
         v.copy(a.mesh.position).project(this.camera);
-        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'ore', dist: a.mesh.position.distanceTo(this.ship.position) });
+        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'ore', dist, size: radToSize(a.r, dist) });
       }
       for(const p of this.pirates){
+        const dist = p.mesh.position.distanceTo(this.ship.position);
         v.copy(p.mesh.position).project(this.camera);
-        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate', dist: p.mesh.position.distanceTo(this.ship.position) });
+        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate', dist, size: radToSize(5, dist) });
       }
       for(let i = 0; i < this.planetMeshes.length; i++){
+        const dist = this.planetMeshes[i].position.distanceTo(this.ship.position);
         v.copy(this.planetMeshes[i].position).project(this.camera);
-        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'planet', label: window.PLANETS[i].name, dist: this.planetMeshes[i].position.distanceTo(this.ship.position) });
+        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'planet', label: window.PLANETS[i].name, dist, size: radToSize(window.PLANETS[i].size, dist) });
       }
       if(this.station){
+        const dist = this.station.position.distanceTo(this.ship.position);
         v.copy(this.station.position).project(this.camera);
-        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station', label: 'ORION STATION', dist: this.station.position.distanceTo(this.ship.position) });
+        if(v.z < 1) out.push({ x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station', label: 'ORION STATION', dist, size: radToSize(70, dist) });
       }
       return out;
     }

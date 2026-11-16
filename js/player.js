@@ -10,6 +10,23 @@
     goo:     { name: 'Alien Goo',     base: 18 }
   };
 
+  // Galactic commodity market: same good, wildly different prices per location.
+  // Buy low, sell high — the heart of the trading loop.
+  const TRADE_GOODS = {
+    food: { name: 'Food Rations', base: 20 },
+    tech: { name: 'Tech Modules', base: 55 },
+    med:  { name: 'Med Supplies', base: 40 },
+    lux:  { name: 'Luxury Goods', base: 90 }
+  };
+  const TRADE_MARKETS = {
+    station: { food: 1.00, tech: 1.15, med: 0.95, lux: 1.10 },
+    p0:      { food: 0.55, tech: 1.45, med: 1.05, lux: 1.50 },
+    p1:      { food: 0.85, tech: 1.10, med: 1.15, lux: 1.25 },
+    p2:      { food: 1.70, tech: 0.70, med: 0.80, lux: 0.60 },
+    p3:      { food: 1.50, tech: 0.80, med: 1.30, lux: 0.70 }
+  };
+  const MARKET_NAMES = { station: 'Station', p0: 'Terra', p1: 'Verdant', p2: 'Krell', p3: 'Ashfall' };
+
   const PLANETS = [
     { name: 'TERRA PRIME', type: 'peaceful', color: 0x4d8fe0, size: 110,
       x: 420,  y: 60,  z: -900,  seed: 11, alienRate: 0.25, treeN: 90, crystalN: 8,
@@ -28,6 +45,7 @@
   const P = {
     hp: 100, shield: 0, credits: 400, medkits: 1,
     cargo: { ore: 0, wood: 0, crystal: 0, goo: 0 },
+    trade: { food: 0, tech: 0, med: 0, lux: 0 },
     up: { weapon: 1, engine: 1, hull: 1, shield: 1 },
     spaceSaved: null,           // ship pos/quat while landed
     planetIndex: 0,
@@ -43,6 +61,31 @@
     cargoUsed(){
       let n = 0;
       for(const k in this.cargo) n += this.cargo[k];
+      for(const k in this.trade) n += this.trade[k];
+      return n;
+    },
+    tradeBuyPrice(good, market){
+      return Math.max(1, Math.round(TRADE_GOODS[good].base * TRADE_MARKETS[market][good]));
+    },
+    tradeSellPrice(good, market){
+      return Math.max(1, Math.round(TRADE_GOODS[good].base * TRADE_MARKETS[market][good] * 0.9));
+    },
+    buyTradeGood(good, market, qty){
+      const cost = this.tradeBuyPrice(good, market) * qty;
+      if(this.credits < cost) return 0;
+      const free = this.cargoMax() - this.cargoUsed();
+      const take = Math.min(qty, free);
+      if(take <= 0) return 0;
+      this.credits -= this.tradeBuyPrice(good, market) * take;
+      this.trade[good] += take;
+      return take;
+    },
+    sellTradeGood(good, market, qty){
+      const have = this.trade[good] | 0;
+      const n = Math.min(qty, have);
+      if(n <= 0) return 0;
+      this.credits += this.tradeSellPrice(good, market) * n;
+      this.trade[good] -= n;
       return n;
     },
     addItem(type, n){
@@ -89,7 +132,8 @@
     save(){
       try{
         localStorage.setItem(SAVE_KEY, JSON.stringify({
-          credits: this.credits, medkits: this.medkits, cargo: this.cargo, up: this.up
+          credits: this.credits, medkits: this.medkits, cargo: this.cargo,
+          trade: this.trade, up: this.up
         }));
       }catch(e){}
     },
@@ -100,6 +144,7 @@
         this.credits = s.credits != null ? s.credits : this.credits;
         this.medkits = s.medkits != null ? s.medkits : this.medkits;
         if(s.cargo) for(const k in this.cargo) this.cargo[k] = s.cargo[k] | 0;
+        if(s.trade) for(const k in this.trade) this.trade[k] = s.trade[k] | 0;
         if(s.up) for(const k in this.up) this.up[k] = s.up[k] || 1;
       }catch(e){}
     }
@@ -109,4 +154,7 @@
   window.PD = P;
   window.COMMS = COMMS;
   window.PLANETS = PLANETS;
+  window.TRADE_GOODS = TRADE_GOODS;
+  window.TRADE_MARKETS = TRADE_MARKETS;
+  window.MARKET_NAMES = MARKET_NAMES;
 })();
