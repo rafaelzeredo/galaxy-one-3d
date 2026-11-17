@@ -200,11 +200,11 @@
     stationIdx: 0,
     visitN: 0,
     _pendingJump: null, // { system: idx } awaiting hyperspace confirmation (Stage C)
-    openStation(){
+    openStation(stationIdx){
       if(this.menuOpenNow) return;
       this.menuOpenNow = true;
       this.galaxyOpen = false;
-      this.stationIdx = Math.max(0, window.Space.nearStationIdx);
+      this.stationIdx = stationIdx !== undefined ? stationIdx : Math.max(0, window.Space.nearStationIdx);
       const station = window.STATIONS[this.stationIdx];
       if(station){
         window.PD.systemIdx = station.sys;
@@ -528,25 +528,40 @@
       m.appendChild(curHead);
       const curGal = this.GALAXY[curSys];
       if(curGal){
+        // Combat-aware proximity: TAB Dock/Land uses the same eligibility as E.
+        // Without pirates, travel works from any distance. With pirates present,
+        // only bodies within E interaction range can be docked/landed on.
+        const piratesPresent = S.pirates && S.pirates.length > 0;
         for(const b of curGal.bodies){
           const info = this._bodyInfo(b);
           const dist = Math.round(Math.hypot(
             info.pos[0] - S.ship.position.x, info.pos[1] - S.ship.position.y, info.pos[2] - S.ship.position.z));
-          const here = dist < 220;
+          // Proximity eligibility matches the E interaction range exactly:
+          // station: dist < 160 (space3d.js proximity), planet: dist < size + 70.
+          let withinReach = false;
+          if(b.kind === 'station'){
+            withinReach = dist < 160;
+          } else {
+            const p = window.PLANETS[b.idx];
+            withinReach = dist < (p.size + 70);
+          }
+          // During combat, TAB Dock/Land requires being within E interaction range.
+          // Hyperdrive inter-system jumps are always available (handled below).
+          const disabled = piratesPresent && !withinReach;
           const row = document.createElement('div');
           row.className = 'menu-row';
           row.innerHTML =
             '<div class="name"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' +
             info.color + ';margin-right:7px;box-shadow:0 0 6px ' + info.color + '"></span>' +
-            info.name + (here ? ' <span style="color:#5ff0ff">◀ HERE</span>' : '') +
-            '<small>' + info.sub + ' · ' + dist + 'u</small></div>' +
+            info.name + '<small>' + info.sub + ' · ' + dist + 'u</small></div>' +
             '<div class="price">' + (b.kind === 'station' ? 'DOCK HUB' : 'LANDABLE') + '</div>';
           const btn = document.createElement('button');
           btn.className = 'menu-btn';
           btn.textContent = b.kind === 'station' ? 'DOCK' : 'LAND';
-          btn.disabled = here;
+          btn.disabled = disabled;
           btn.addEventListener('click', () => {
-            if(b.kind === 'station') this.openStation();
+            this.menuClose();
+            if(b.kind === 'station') this.openStation(b.idx);
             else this.landOn(b.idx);
           });
           row.appendChild(btn);

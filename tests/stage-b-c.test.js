@@ -61,6 +61,17 @@ function collectText(node){
   return out;
 }
 
+function findButton(node, text){
+  if(node.tagName === 'BUTTON' || (node.className === 'menu-btn')){
+    if(node.textContent && node.textContent.includes(text)) return node;
+  }
+  for(const c of (node.children || [])){
+    const found = findButton(c, text);
+    if(found) return found;
+  }
+  return null;
+}
+
 function renderGalaxy(windowObj){
   const Game = windowObj.Game;
   const menu = makeEl();
@@ -265,4 +276,116 @@ test('TAB render exposes the ACTIVE MISSIONS section header', () => {
   assert.match(text, /ACTIVE MISSIONS/);
   assert.match(text, /Deliver 5 Iron Ore → NOVARA/);
   assert.match(text, /NOVARA \[NOVARA SPUR\]/);
+});
+
+test('openStation(stationIdx) docks at the clicked station, not the nearest one', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.menuOpenNow = false;
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  // Set nearStationIdx to a different station (0 = Orion) but click dock for station 1 (Krell Depot)
+  window.Space.nearStationIdx = 0;
+  Game.openStation(1);
+  assert.equal(Game.stationIdx, 1, 'stationIdx should be the clicked station (1 = Krell Depot)');
+  assert.equal(PD.systemIdx, 1, 'systemIdx should match the clicked station system');
+});
+
+test('TAB Dock/Land enabled from any distance when no pirates are present', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0; // ORION REACH
+  S.ship = { position: { x: 5000, y: 0, z: 0 } }; // far from everything
+  S.pirates = []; // no pirates
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { position: { x: 0, y: 0, z: 0 } } });
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const dockBtn = findButton(Game.els.menuInner, 'DOCK');
+  const landBtn = findButton(Game.els.menuInner, 'LAND');
+  assert.ok(dockBtn, 'DOCK button should exist');
+  assert.ok(landBtn, 'LAND button should exist');
+  assert.equal(dockBtn.disabled, false, 'DOCK should be enabled from any distance without pirates');
+  assert.equal(landBtn.disabled, false, 'LAND should be enabled from any distance without pirates');
+});
+
+test('TAB Dock blocked when pirates present and station outside E range (160u)', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  S.ship = { position: { x: 1000, y: 0, z: 0 } }; // 1000u from Orion Station at [0,0,0]
+  S.pirates = [{ disabledT: 0 }]; // pirates present
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { position: { x: 0, y: 0, z: 0 } } });
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const dockBtn = findButton(Game.els.menuInner, 'DOCK');
+  assert.equal(dockBtn.disabled, true, 'DOCK should be blocked when station is outside E range during combat');
+});
+
+test('TAB Dock works when pirates present and station within E range (160u)', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  S.ship = { position: { x: 100, y: 0, z: 0 } }; // 100u from Orion Station - within E range
+  S.pirates = [{ disabledT: 0 }];
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { position: { x: 0, y: 0, z: 0 } } });
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const dockBtn = findButton(Game.els.menuInner, 'DOCK');
+  assert.equal(dockBtn.disabled, false, 'DOCK should work when station is within E range during combat');
+});
+
+test('TAB Land blocked when pirates present and planet outside E range', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  // Terra Prime at [420, 60, -900], size 110 → E range = 180
+  S.ship = { position: { x: 2000, y: 60, z: -900 } }; // far from Terra Prime
+  S.pirates = [{ disabledT: 0 }];
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const landBtn = findButton(Game.els.menuInner, 'LAND');
+  assert.equal(landBtn.disabled, true, 'LAND should be blocked when planet is outside E range during combat');
+});
+
+test('TAB Land works when pirates present and planet within E range', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  // Terra Prime at [420, 60, -900], size 110 → E range = 180
+  S.ship = { position: { x: 450, y: 60, z: -900 } }; // 30u from Terra Prime - within E range
+  S.pirates = [{ disabledT: 0 }];
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const landBtn = findButton(Game.els.menuInner, 'LAND');
+  assert.equal(landBtn.disabled, false, 'LAND should work when planet is within E range during combat');
+});
+
+test('Pirate spawn timer doubled for ~50% less frequent encounters', () => {
+  const { window } = makeContext();
+  const S = window.Space;
+  // The respawn interval should be approximately double the original (22-18 → 44-36)
+  // Check by looking at the source: we can verify the timer reset value pattern
+  // Original: pirateTimer = 22 + Math.random() * 18 (avg 31s)
+  // New: pirateTimer = 44 + Math.random() * 36 (avg 62s)
+  // We verify by checking the min and max bounds in the source
+  const src = require('node:fs').readFileSync(path.join(ROOT, 'js/space3d.js'), 'utf8');
+  const match = src.match(/pirateTimer = (\d+) \+ Math\.random\(\) \* (\d+)/);
+  assert.ok(match, 'pirateTimer reset pattern found in source');
+  const min = parseInt(match[1]);
+  const maxAdd = parseInt(match[2]);
+  assert.equal(min, 44, 'pirateTimer minimum should be 44 (doubled from 22)');
+  assert.equal(maxAdd, 36, 'pirateTimer random add should be 36 (doubled from 18)');
 });

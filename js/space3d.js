@@ -1179,7 +1179,7 @@
       // pirate AI
       this.pirateTimer -= dt;
       if(this.pirateTimer <= 0){
-        this.pirateTimer = 22 + Math.random() * 18;
+        this.pirateTimer = 44 + Math.random() * 36;
         if(Math.random() < 0.65) this._spawnPirate();
       }
       for(const e of this.pirates){
