@@ -393,21 +393,21 @@ test('TAB Land works when pirates present and planet within E range', () => {
   assert.equal(landBtn.disabled, false, 'LAND should work when planet is within E range during combat');
 });
 
-test('Pirate spawn timer doubled for ~50% less frequent encounters', () => {
+test('Pirate spawn timer tuned for ~2-3 min open-space encounter pacing', () => {
   const { window } = makeContext();
   const S = window.Space;
-  // The respawn interval should be approximately double the original (22-18 → 44-36)
+  // Step 3E: encounters should normally start within ~2-3 min of open-space flight.
+  // Current: pirateTimer = 30 + Math.random() * 20 (avg 40s between attempts, ~65% spawn -> ~1 min mean)
   // Check by looking at the source: we can verify the timer reset value pattern
-  // Original: pirateTimer = 22 + Math.random() * 18 (avg 31s)
-  // New: pirateTimer = 44 + Math.random() * 36 (avg 62s)
+  // Step 3E: pirateTimer = 30 + Math.random() * 20 (avg 40s between attempts)
   // We verify by checking the min and max bounds in the source
   const src = require('node:fs').readFileSync(path.join(ROOT, 'js/space3d.js'), 'utf8');
   const match = src.match(/pirateTimer = (\d+) \+ Math\.random\(\) \* (\d+)/);
   assert.ok(match, 'pirateTimer reset pattern found in source');
   const min = parseInt(match[1]);
   const maxAdd = parseInt(match[2]);
-  assert.equal(min, 44, 'pirateTimer minimum should be 44 (doubled from 22)');
-  assert.equal(maxAdd, 36, 'pirateTimer random add should be 36 (doubled from 18)');
+  assert.equal(min, 30, 'pirateTimer minimum should be 30 (Step 3E pacing for ~2-3 min encounters)');
+  assert.equal(maxAdd, 20, 'pirateTimer random add should be 20 (Step 3E pacing for ~2-3 min encounters)');
 });
 
 test('TAB Dock via jumpTo moves ship near station before opening station interface', () => {

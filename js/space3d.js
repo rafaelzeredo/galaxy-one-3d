@@ -1183,7 +1183,7 @@
       // pirate AI
       this.pirateTimer -= dt;
       if(this.pirateTimer <= 0){
-        this.pirateTimer = 44 + Math.random() * 36;
+        this.pirateTimer = 30 + Math.random() * 20; // Step 3E: ~2-3 min pacing
         if(Math.random() < 0.65) this._spawnPirate();
       }
       for(const e of this.pirates){

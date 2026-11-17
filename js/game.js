@@ -220,6 +220,7 @@
       window.GameAudio.uiClick();
       this._renderStation();
       this.els.menu.classList.remove('hidden');
+      this.els.menu.classList.add('open');
     },
     openTrade(){
       if(this.menuOpenNow) return;
@@ -232,6 +233,7 @@
       window.GameAudio.uiClick();
       this._renderTrade();
       this.els.menu.classList.remove('hidden');
+      this.els.menu.classList.add('open');
     },
     openGalaxy(){
       if(this.menuOpenNow) return;
@@ -240,12 +242,14 @@
       window.GameAudio.uiClick();
       this._renderGalaxy();
       this.els.menu.classList.remove('hidden');
+      this.els.menu.classList.add('open');
     },
     menuClose(){
       this.menuOpenNow = false;
       this.galaxyOpen = false;
       this._closeCd = 6; // ~0.1s: block instant E-reopen at interactables
       this.els.menu.classList.add('hidden');
+      this.els.menu.classList.remove('open'); // Step 3E: menu open -> cursor visible over game viewport
     },
 
     _lvl(l){ return '▮'.repeat(l) + '▯'.repeat(5 - l); },
@@ -1325,7 +1329,7 @@
           // Living world UI: locked enemy target shows hull health (bar + numeric)
           const healthLocked = !!(S.locked && hov && hov.type === 'pirate');
           if(healthLocked){
-            lines.push(['HULL ' + Math.ceil(hov.hp || 0) + ' / ' + Math.ceil(hov.maxHp || 0), 'rgba(95,240,255,0.9)']);
+            lines.push(['HULL ' + Math.ceil(hov.hp || 0) + ' / ' + Math.ceil(hov.maxHp || 0), 'rgba(255,95,122,0.9)']); // Step 3E: red enemy hull health
           }
           const bh = healthLocked ? 64 : 52;
           const bw = Math.max.apply(null, lines.map(l => ctx.measureText(l[0]).width)) + 14;
@@ -1346,7 +1350,7 @@
             ctx.fillStyle = 'rgba(255,255,255,0.12)';
             ctx.fillRect(px, hy, hbW, hbH);
             const frac = Math.max(0, Math.min(1, (hov.hp || 0) / Math.max(1, hov.maxHp || 1)));
-            ctx.fillStyle = 'rgba(95,240,255,0.9)';
+            ctx.fillStyle = 'rgba(255,95,122,0.9)'; // Step 3E: red enemy hull health bar
             ctx.fillRect(px, hy, hbW * frac, hbH);
           }
         }

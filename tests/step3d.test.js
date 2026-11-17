@@ -122,19 +122,32 @@ test('mouse cursor: hidden over gameplay viewport elements, visible on start scr
   const css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
   const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const jsSrc = ['js/game.js', 'js/player.js', 'js/space3d.js', 'js/planet2d.js', 'js/audio.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
-  for(const sel of ['#space3d', '#hud2d', '#hud', '#crosshair', '#menu']){
+  for(const sel of ['#space3d', '#hud2d', '#hud', '#crosshair']){
     const re = new RegExp(sel.replace('#', '\\#') + '[^{]*\\{[^}]*cursor\\s*:\\s*none');
     assert.ok(re.test(css), 'game element ' + sel + ' hides the cursor during gameplay');
   }
+  const menuRe = new RegExp('#menu\\{[^}]*cursor\\s*:\\s*none');
+  assert.ok(menuRe.test(css), 'game menu hides the cursor during normal gameplay');
+  const menuOpenRe = new RegExp('#menu\\.open\\{[^}]*cursor\\s*:\\s*(auto|default|visible|pointer)');
+  assert.ok(menuOpenRe.test(css), 'interactive menu (#menu.open) shows the cursor across the game viewport');
   assert.ok(!/#screen-start[^{]*\{[^}]*cursor\s*:\s*none/.test(css), 'start screen keeps the default cursor');
   assert.ok(!/pointerlock|requestPointerLock|exitPointerLock/i.test(css + jsSrc + idx),
     'no pointer lock / pointer trapping introduced');
+});
+
+test('interactive menu open state toggles cursor visibility (Step 3E)', () => {
+  const jsSrc = ['js/game.js', 'js/player.js', 'js/space3d.js', 'js/planet2d.js', 'js/audio.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  assert.ok(/classList\.add\('open'\)/.test(jsSrc), 'opening an interactive menu adds the #menu.open state');
+  assert.ok(/classList\.remove\('open'\)/.test(jsSrc), 'closing an interactive menu removes the #menu.open state');
 });
 
 test('scanner: locked enemy shows hull health bar and numeric hull values', () => {
   const { window } = makeContext();
   const Game = window.Game;
   const S = window.Space;
+  const gameJs = ['js/game.js', 'js/player.js', 'js/space3d.js', 'js/planet2d.js', 'js/audio.js'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  assert.ok(/HULL [^\n]*rgba\(255,95,122,0\.9\)/.test(gameJs), 'locked enemy hull health (bar + value) rendered in red (Step 3E)');
+  assert.ok(!/HULL [^\n]*rgba\(95,240,255/.test(gameJs), 'locked enemy hull health no longer uses the light-blue HUD colour');
   Game.state = 'space';
   Game.menuOpenNow = false;
   Game.hudCtx = {
