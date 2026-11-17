@@ -43,7 +43,7 @@
   };
 
   // Planetary ranged weapons: purchased once, then usable on planetary surfaces
-  // when Energy Cells are available. Each shot consumes one Energy Cell.
+  // when Pulse Rounds are available. Each shot consumes one Pulse Round.
   const WEAPON_DEFS = {
     laserpistol: { name: 'Laser Pistol',  desc: 'controlled, slower firing', dmg: 10, delay: 0.50, cost: 250,
       baseSpread: 0.020, recoilPerShot: 0.10, maxRecoil: 0.30, recoilRecovery: 0.60, range: 400 },
@@ -178,6 +178,27 @@
       this.save();
       return Math.round(25 * 0.9 * n);
     },
+    // Living world: stock rotation when leaving a solar system. Clears the
+    // cached vendor stock (hub station pool + planetary trader pools) belonging
+    // to the system being left so the next visit rolls a fresh availability and
+    // quantity rotation. Called only on system departure — never on shop open,
+    // shop close or intra-system planet hops. Never touches gear the player
+    // already owns (rotation only fills weapons the player does not own).
+    rotateStockForSystem(sysIdx){
+      const si = sysIdx | 0;
+      const sys = SYSTEMS[si];
+      if(!sys) return false;
+      const keys = ['station'];
+      for(const pi of sys.planets){
+        const p = PLANETS[pi];
+        if(p && p.trader) keys.push('p' + pi);
+      }
+      let rotated = 0;
+      for(const k of keys){
+        if(this.marketStock[k]) { delete this.marketStock[k]; rotated++; }
+      }
+      return rotated > 0;
+    },
     cargoMax(){ return 40 + this.up.hull * 10 + this.installed.filter(m => m === 'cargo').length * 20; },
     cargoUsed(){
       let n = 0;
@@ -304,7 +325,8 @@
           weapons: this.weapons,
           equippedWeapon: this.equippedWeapon,
           energyCells: this.energyCells,
-          marketStock: this.marketStock
+          marketStock: this.marketStock,
+          surfaceStates: this.surfaceStates || {}
         }));
       }catch(e){}
     },
@@ -330,6 +352,9 @@
         this.equippedWeapon = s.equippedWeapon != null && this.hasWeapon(s.equippedWeapon) ? s.equippedWeapon : null;
         this.energyCells = s.energyCells != null ? s.energyCells | 0 : 0;
         if(s.marketStock && typeof s.marketStock === 'object') this.marketStock = s.marketStock;
+        // Per-planet surface state (harvested/depleted nodes + regen timestamps)
+        // must persist across save/load so resources regrow from the right point.
+        if(s.surfaceStates && typeof s.surfaceStates === 'object') this.surfaceStates = s.surfaceStates;
       }catch(e){}
     },
     // Start a completely fresh game: reset all progression to starting values

@@ -627,7 +627,7 @@ test('weapon HUD shows icon and name when equipped', () => {
   };
   Game._renderHudDom();
   assert.ok(wepEl.innerHTML.includes('Laser Pistol'), 'shows laser pistol name');
-  assert.ok(wepEl.innerHTML.includes('CELLS ×10'), 'shows energy cell count');
+  assert.ok(wepEl.innerHTML.includes('PULSE ROUNDS ×10'), 'shows energy cell count');
   assert.ok(wepEl.innerHTML.includes('⚬|'), 'shows pistol icon');
 });
 
@@ -659,7 +659,7 @@ test('weapon HUD shows assault rifle icon when equipped', () => {
   Game._renderHudDom();
   assert.ok(wepEl.innerHTML.includes('Assault Rifle'), 'shows assault rifle name');
   assert.ok(wepEl.innerHTML.includes('⚬|='), 'shows rifle icon');
-  assert.ok(wepEl.innerHTML.includes('CELLS ×3'), 'shows energy cell count');
+  assert.ok(wepEl.innerHTML.includes('PULSE ROUNDS ×3'), 'shows energy cell count');
 });
 
 test('weapon HUD shows G switch hint when both weapons owned', () => {

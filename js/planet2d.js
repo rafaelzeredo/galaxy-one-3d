@@ -217,7 +217,7 @@
       } while(tries++ < 20 && Math.hypot(x - this.player.x, y - this.player.y) < 500);
       this.aliens.push({
         x, y, hp: spitter ? 26 : 16, spitter: !!spitter,
-        speed: spitter ? 40 : 62 + this.planet.alienRate * 14,
+        speed: this.alienSpeed(this.planet.alienRate, spitter),
         t: Math.random() * 6, atkT: 0, wob: Math.random() * 6.28
       });
     },
@@ -225,6 +225,48 @@
     isNearShip(){
       if(!this.state || !this.state.ship) return false;
       return Math.hypot(this.player.x - this.state.ship.x, this.player.y - this.state.ship.y) < 70;
+    },
+
+    // Alien movement tuning (Living World Update): chasers scale with the
+    // planet's hostility so hostile packs pursue at ~player-run speed (or a bit
+    // faster, harder to escape by running); spitters keep a slower ranged
+    // archetype. Speeds are in world units/second.
+    alienSpeed(alienRate, spitter){
+      const RUN_SPEED = 150; // player run speed in planet mode
+      const v = spitter ? RUN_SPEED * (0.25 + alienRate * 0.25) : RUN_SPEED * (0.5 + alienRate * 0.4);
+      return Math.round(v * 10) / 10;
+    },
+
+    // Living world: gradual time-based natural regeneration of depleted
+    // harvest nodes. Each node remembers when it was depleted (depletedAt);
+    // while depleted it recovers over time at a kind-specific rate. Time spent
+    // on other planets or in other star systems counts automatically because we
+    // measure against wall-clock elapsed time since depletion.
+    regenResources(nowMs){
+      const PD = window.PD;
+      const surfaces = PD ? PD.surfaceStates : null;
+      if(!surfaces) return;
+      const RATES = { tree: 0.30, rock: 0.05, crystal: 0.025 }; // hp units per second
+      const MAX_HP = 3;
+      const tickArr = (arr, kind) => {
+        if(!arr) return;
+        for(const n of arr){
+          if(n.hp > 0 || n.depletedAt == null) continue; // only depleted nodes regen
+          const rate = RATES[kind] || RATES.rock;
+          const elapsed = Math.max(0, (nowMs - n.depletedAt) / 1000);
+          const recovered = elapsed * rate;
+          if(recovered >= 1){
+            n.hp = Math.min(MAX_HP, n.hp + Math.floor(recovered));
+          }
+        }
+      };
+      for(const key in surfaces){
+        const st = surfaces[key];
+        if(!st) continue;
+        tickArr(st.trees, 'tree');
+        tickArr(st.rocks, 'rock');
+        tickArr(st.crystals, 'crystal');
+      }
     },
 
     update(dt){
@@ -407,7 +449,7 @@
           if(nest){
             this.aliens.push({
               x: nest.x + (Math.random() - 0.5) * 60, y: nest.y + (Math.random() - 0.5) * 60,
-              hp: 16, spitter: false, speed: 62 + this.planet.alienRate * 14,
+              hp: 16, spitter: false, speed: this.alienSpeed(this.planet.alienRate, false),
               t: 0, atkT: 0, wob: Math.random() * 6.28
             });
           }
@@ -470,6 +512,7 @@
             else if(kind === 'tree') this._give('wood', 2);
             else this._give('ore', 2);
             if(target.hp <= 0){
+              target.depletedAt = Date.now(); // mark depletion so resources regrow over time
               if(kind === 'crystal') this._give('crystal', 1);
               this._spawnFx(target.x, target.y, burstCol, 14, 140, 3, true, 0.7);
               this.harvest = null;
@@ -952,7 +995,7 @@
         const icon = window.PD.equippedWeapon === 'laserpistol' ? '⚬|' : '⚬|=';
         ctx.fillText(icon + ' ' + w.name + '  DMG ' + w.dmg + '  DELAY ' + w.delay.toFixed(2) + 's', 26, 34);
         ctx.fillStyle = '#ffd479';
-        ctx.fillText('ENERGY CELLS ×' + window.PD.energyCells, 26, 52);
+        ctx.fillText('PULSE ROUNDS ×' + window.PD.energyCells, 26, 52);
         // owned weapons
         let ox = 26;
         for(const wk of window.PD.weapons){

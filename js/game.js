@@ -701,6 +701,10 @@
       window.GameAudio.warp();
       const ok = window.Space.hyperspaceToSystem(si);
       if(!ok) this._renderGalaxy();
+      // Living world: vendors of the system we are leaving rotate to fresh
+      // stock. Destination vendors keep whatever stock they already had; the
+      // new rotation takes effect on the next visit.
+      window.PD.rotateStockForSystem(cur);
     },
 
     _renderEquipment(m){
@@ -909,7 +913,7 @@
       const stock = this._marketStock('station');
       // energy cells
       if(stock.energyCells > 0){
-        this._row(m, 'Energy Cells', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
           if(PD.credits < 25) return;
           PD.credits -= 25;
           PD.energyCells++;
@@ -919,11 +923,11 @@
           this._renderStation();
         }, false);
       } else {
-        this._row(m, 'Energy Cells', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
       }
       // sell energy cells
       if(PD.energyCells > 0){
-        this._row(m, 'Sell Energy Cells', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
+        this._row(m, 'Sell Pulse Rounds', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
           const refund = PD.sellEnergyCells(PD.energyCells);
           window.GameAudio.coin();
           window.PD.save();
@@ -1051,7 +1055,7 @@
       pg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">PLANETARY GEAR</div>';
       m.appendChild(pg);
       if(tStock.energyCells > 0){
-        this._row(m, 'Energy Cells', 'ammo for ranged weapons · ' + tStock.energyCells + ' in stock', '30 CR', 'BUY', () => {
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + tStock.energyCells + ' in stock', '30 CR', 'BUY', () => {
           if(PD.credits < 30) return;
           PD.credits -= 30;
           PD.energyCells++;
@@ -1061,7 +1065,7 @@
           this._renderTrade();
         }, false);
       } else {
-        this._row(m, 'Energy Cells', 'ammo for ranged weapons · out of stock', '30 CR', '—', () => {}, true);
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '30 CR', '—', () => {}, true);
       }
       for(const wk in window.WEAPON_DEFS){
         const wd = window.WEAPON_DEFS[wk];
@@ -1187,14 +1191,14 @@
             const w = window.WEAPON_DEFS[PD.equippedWeapon];
             // simple silhouette icon: pistol = )|  , assault rifle = )|= 
             const icon = wd => wd === 'laserpistol' ? '⚬|' : '⚬|=';
-            wepEl.innerHTML = icon(PD.equippedWeapon) + ' <b>' + w.name + '</b> · CELLS ×' + PD.energyCells;
+            wepEl.innerHTML = icon(PD.equippedWeapon) + ' <b>' + w.name + '</b> · PULSE ROUNDS ×' + PD.energyCells;
             // show switch hint only when both weapons owned
             if(PD.weapons.length >= 2){
               wepEl.innerHTML += '  <span style="color:#8fc6d8">[G] switch</span>';
             }
             if(wepEl.parentElement) wepEl.parentElement.style.display = '';
           } else {
-            wepEl.innerHTML = 'WEAPON · NONE  CELLS ×' + PD.energyCells;
+            wepEl.innerHTML = 'WEAPON · NONE  PULSE ROUNDS ×' + PD.energyCells;
             if(wepEl.parentElement) wepEl.parentElement.style.display = '';
           }
         }
@@ -1370,6 +1374,11 @@
       } else if(this.state === 'planet'){
         window.Planet.update(dt);
         this._checkMissions();
+      }
+      // Living world: gradual time-based natural resource regeneration across
+      // all known planetary surfaces (time spent in other systems counts).
+      if(window.Planet && window.Planet.regenResources){
+        window.Planet.regenResources(Date.now());
       }
       this.input.pressedCodes.clear();
       if(this._closeCd > 0) this._closeCd--;

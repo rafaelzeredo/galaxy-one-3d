@@ -349,7 +349,11 @@
         window.PD.systemIdx = d.sys;
       }
       window.PD.save();
-      if(window.PD.systemIdx !== prevSys){ this.clearTransient(); this.resetAsteroids(); } // Stage B+C: fresh encounters + local mining debris in the new system
+      if(window.PD.systemIdx !== prevSys){
+        // Living world: leaving a system rotates that system's vendor stock.
+        window.PD.rotateStockForSystem(prevSys);
+        this.clearTransient(); this.resetAsteroids(); // Stage B+C: fresh encounters + local mining debris in the new system
+      }
       this.syncWorld(); // Stage 1: hide bodies of systems other than the new current one
       const dir = this.ship.position.clone().sub(pos);
       if(dir.length() < 1) dir.set(0, 0, 1);
