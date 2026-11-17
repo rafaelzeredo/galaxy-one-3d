@@ -24,7 +24,9 @@ function makeEl(){
     id: '', style: {}, children: [], innerHTML: '', textContent: '', value: '',
     classList: { add(){}, remove(){}, contains(){ return false; } },
     appendChild(c){ this.children.push(c); return c; },
-    addEventListener(){}, remove(){},
+    addEventListener(type, cb){ if(type === 'click') this._click = cb; },
+    remove(){},
+    click(){ if(this._click) this._click(); },
     getContext(){ return null; }
   };
 }
@@ -70,6 +72,24 @@ function findButton(node, text){
     if(found) return found;
   }
   return null;
+}
+
+// Simple Vector3-like mock for testing jumpTo positioning
+function makeVec(x, y, z){
+  return {
+    x, y, z,
+    clone(){ return makeVec(this.x, this.y, this.z); },
+    sub(v){ return makeVec(this.x - v.x, this.y - v.y, this.z - v.z); },
+    normalize(){
+      const len = Math.sqrt(this.x*this.x + this.y*this.y + this.z*this.z);
+      if(len > 0){ this.x /= len; this.y /= len; this.z /= len; }
+      return this;
+    },
+    set(x, y, z){ this.x = x; this.y = y; this.z = z; return this; },
+    copy(v){ this.x = v.x; this.y = v.y; this.z = v.z; return this; },
+    addScaledVector(v, s){ this.x += v.x*s; this.y += v.y*s; this.z += v.z*s; return this; },
+    length(){ return Math.sqrt(this.x*this.x + this.y*this.y + this.z*this.z); }
+  };
 }
 
 function renderGalaxy(windowObj){
@@ -388,4 +408,58 @@ test('Pirate spawn timer doubled for ~50% less frequent encounters', () => {
   const maxAdd = parseInt(match[2]);
   assert.equal(min, 44, 'pirateTimer minimum should be 44 (doubled from 22)');
   assert.equal(maxAdd, 36, 'pirateTimer random add should be 36 (doubled from 18)');
+});
+
+test('TAB Dock via jumpTo moves ship near station before opening station interface', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  S.scene = { children: [], add(o){ this.children.push(o); }, remove(o){ const i=this.children.indexOf(o); if(i>=0) this.children.splice(i,1); } };
+  // Ship starts far from Orion Station
+  S.ship = { position: makeVec(5000, 0, 0), quaternion: { setFromUnitVectors(){ return this; } } };
+  S.vel = { set(){ return this; } };
+  S.pirates = []; // no pirates
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++){
+    S.stations.push({ grp: { position: makeVec(0, 0, 0), parent: null }, def: window.STATIONS[i] });
+  }
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const dockBtn = findButton(Game.els.menuInner, 'DOCK');
+  assert.ok(dockBtn, 'DOCK button should exist');
+  dockBtn.click();
+  // Ship should now be near Orion Station (130u pad)
+  const dist = Math.hypot(S.ship.position.x, S.ship.position.y, S.ship.position.z);
+  assert.ok(dist < 200, 'Ship should be near station after TAB Dock, dist=' + dist);
+  assert.equal(PD.systemIdx, 0, 'systemIdx should be ORION REACH after dock');
+});
+
+test('TAB Land via jumpTo moves ship near planet before landing', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  const Game = window.Game;
+  PD.systemIdx = 0;
+  S.scene = { children: [], add(o){ this.children.push(o); }, remove(o){ const i=this.children.indexOf(o); if(i>=0) this.children.splice(i,1); } };
+  // Ship starts far from Terra Prime
+  S.ship = { position: makeVec(5000, 0, 0), quaternion: { setFromUnitVectors(){ return this; } } };
+  S.vel = { set(){ return this; } };
+  S.pirates = []; // no pirates
+  S.planetMeshes = [];
+  for(let i = 0; i < window.PLANETS.length; i++){
+    S.planetMeshes.push({ position: makeVec(window.PLANETS[i].x, window.PLANETS[i].y, window.PLANETS[i].z) });
+  }
+  Game.els = { menuInner: makeEl(), menu: makeEl(), toasts: { children: [], appendChild(c){ this.children.push(c); return c; }, firstChild: null } };
+  Game._renderGalaxy();
+  const landBtn = findButton(Game.els.menuInner, 'LAND');
+  assert.ok(landBtn, 'LAND button should exist');
+  landBtn.click();
+  // Ship should now be near Terra Prime (size + 55 = 165u pad)
+  const p = window.PLANETS[0];
+  const dist = Math.hypot(
+    S.ship.position.x - p.x, S.ship.position.y - p.y, S.ship.position.z - p.z);
+  assert.ok(dist < 200, 'Ship should be near planet after TAB Land, dist=' + dist);
+  assert.equal(PD.systemIdx, 0, 'systemIdx should be ORION REACH after land');
 });

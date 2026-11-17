@@ -561,8 +561,11 @@
           btn.disabled = disabled;
           btn.addEventListener('click', () => {
             this.menuClose();
-            if(b.kind === 'station') this.openStation(b.idx);
-            else this.landOn(b.idx);
+            const S = window.Space;
+            if(S.jumpTo(b.kind, b.idx)){
+              if(b.kind === 'station') this.openStation(b.idx);
+              else this.landOn(b.idx);
+            }
           });
           row.appendChild(btn);
           m.appendChild(row);
