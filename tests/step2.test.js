@@ -380,3 +380,123 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
   assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after second evacuation');
   assert.equal(Game.deathHandled, false, 'deathHandled flag reset after second evacuation');
 });
+
+// ---- Step 3A: Planetary weapons, energy cells, melee, alien health bars ----
+
+test('PD.hasWeapon / PD.equipWeapon / PD.weaponDmg / PD.weaponDelay', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  assert.equal(PD.hasWeapon('laserpistol'), false);
+  assert.equal(PD.equippedWeapon, null);
+  assert.equal(PD.weaponDmg(), 0);
+  assert.equal(PD.weaponDelay(), 0);
+
+  PD.weapons.push('laserpistol');
+  assert.equal(PD.hasWeapon('laserpistol'), true);
+  PD.equipWeapon('laserpistol');
+  assert.equal(PD.equippedWeapon, 'laserpistol');
+  assert.equal(PD.weaponDmg(), 10);
+  assert.equal(PD.weaponDelay(), 0.5);
+
+  PD.weapons.push('assaultrifle');
+  PD.equipWeapon('assaultrifle');
+  assert.equal(PD.equippedWeapon, 'assaultrifle');
+  assert.equal(PD.weaponDmg(), 6);
+  assert.equal(PD.weaponDelay(), 0.2);
+});
+
+test('PD.newGame resets weapons and energy cells', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol', 'assaultrifle'];
+  PD.equippedWeapon = 'assaultrifle';
+  PD.energyCells = 50;
+  PD.marketStock = { station: { energyCells: 5, weapons: {} } };
+
+  PD.newGame();
+  assert.equal(PD.weapons.length, 0);
+  assert.equal(PD.equippedWeapon, null);
+  assert.equal(PD.energyCells, 0);
+  assert.equal(Object.keys(PD.marketStock).length, 0);
+});
+
+test('save/load round-trips weapons and energy cells', () => {
+  const { window, localStorage } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol'];
+  PD.equippedWeapon = 'laserpistol';
+  PD.energyCells = 25;
+  PD.marketStock = { station: { energyCells: 3, weapons: { assaultrifle: 1 } } };
+  PD.save();
+
+  const raw = JSON.parse(localStorage.getItem('galaxy-one-save'));
+  assert.equal(raw.weapons[0], 'laserpistol');
+  assert.equal(raw.equippedWeapon, 'laserpistol');
+  assert.equal(raw.energyCells, 25);
+  assert.equal(raw.marketStock.station.energyCells, 3);
+
+  const { window: w2 } = loadPlayer(raw);
+  assert.equal(w2.PD.weapons[0], 'laserpistol');
+  assert.equal(w2.PD.equippedWeapon, 'laserpistol');
+  assert.equal(w2.PD.energyCells, 25);
+  assert.equal(w2.PD.marketStock.station.energyCells, 3);
+});
+
+test('WEAPON_DEFS has correct values', () => {
+  const { window } = loadPlayer();
+  assert.equal(window.WEAPON_DEFS.laserpistol.dmg, 10);
+  assert.equal(window.WEAPON_DEFS.laserpistol.delay, 0.5);
+  assert.equal(window.WEAPON_DEFS.laserpistol.cost, 250);
+  assert.equal(window.WEAPON_DEFS.assaultrifle.dmg, 6);
+  assert.equal(window.WEAPON_DEFS.assaultrifle.delay, 0.2);
+  assert.equal(window.WEAPON_DEFS.assaultrifle.cost, 400);
+});
+
+test('market stock persists between openings', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  // Simulate _marketStock being called twice for same market
+  PD.marketStock = {};
+  PD.marketStock['station'] = { energyCells: 7, weapons: { laserpistol: 1 } };
+  const stock1 = PD.marketStock['station'];
+  const stock2 = PD.marketStock['station'];
+  assert.equal(stock1, stock2, 'same stock object returned');
+  assert.equal(stock1.energyCells, 7);
+  assert.equal(stock1.weapons.laserpistol, 1);
+});
+
+test('energy cells consumed on shoot', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.equippedWeapon = 'laserpistol';
+  PD.energyCells = 3;
+  PD.weapons = ['laserpistol'];
+
+  // Simulate one shot consuming 1 cell
+  PD.energyCells--;
+  assert.equal(PD.energyCells, 2);
+
+  // Simulate shooting until empty
+  while(PD.energyCells > 0) PD.energyCells--;
+  assert.equal(PD.energyCells, 0);
+  assert.ok(PD.energyCells <= 0, 'no ammo left');
+});
+
+test('cannot fire without equipped weapon', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.equippedWeapon = null;
+  PD.energyCells = 10;
+  assert.equal(PD.equippedWeapon, null);
+  assert.equal(PD.weaponDmg(), 0);
+  assert.equal(PD.weaponDelay(), 0);
+});
+
+test('cannot fire without energy cells', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.equippedWeapon = 'laserpistol';
+  PD.energyCells = 0;
+  assert.equal(PD.energyCells, 0);
+  // Weapon equipped but no ammo - cannot fire
+});

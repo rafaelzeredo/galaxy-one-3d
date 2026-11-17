@@ -288,6 +288,26 @@
       }
       return parts.join(' · ');
     },
+    // Market stock for planetary weapons/ammo: persists between openings,
+    // refreshed periodically. Stations always stock energy cells; traders
+    // have a lower probability of stocking weapons and ammo.
+    _marketStock(marketKey){
+      const PD = window.PD;
+      if(!PD.marketStock[marketKey]){
+        const isStation = marketKey === 'station';
+        const stock = { energyCells: 0, weapons: {} };
+        stock.energyCells = isStation
+          ? (5 + Math.floor(Math.random() * 10))
+          : (Math.random() < 0.5 ? (3 + Math.floor(Math.random() * 6)) : 0);
+        for(const wk in window.WEAPON_DEFS){
+          if(!PD.hasWeapon(wk) && (isStation || Math.random() < 0.3)){
+            stock.weapons[wk] = 1;
+          }
+        }
+        PD.marketStock[marketKey] = stock;
+      }
+      return PD.marketStock[marketKey];
+    },
 
     _renderStation(){
       const PD = window.PD;
@@ -882,6 +902,47 @@
         row.appendChild(wrap);
         m.appendChild(row);
       }
+      // planetary gear: weapons and energy cells (station market)
+      const pg = document.createElement('div');
+      pg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">PLANETARY GEAR</div>';
+      m.appendChild(pg);
+      const stock = this._marketStock('station');
+      // energy cells
+      if(stock.energyCells > 0){
+        this._row(m, 'Energy Cells', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
+          if(PD.credits < 25) return;
+          PD.credits -= 25;
+          PD.energyCells++;
+          stock.energyCells--;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Energy Cells', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
+      }
+      // weapons for sale
+      for(const wk in window.WEAPON_DEFS){
+        const wd = window.WEAPON_DEFS[wk];
+        const owned = PD.hasWeapon(wk);
+        const inStock = stock.weapons[wk] > 0;
+        if(owned){
+          this._row(m, wd.name, 'already owned', '—', '—', () => {}, true);
+        } else if(inStock){
+          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', wd.cost + ' CR', 'BUY', () => {
+            if(PD.credits < wd.cost) return;
+            PD.credits -= wd.cost;
+            PD.weapons.push(wk);
+            if(!PD.equippedWeapon) PD.equippedWeapon = wk;
+            delete stock.weapons[wk];
+            window.GameAudio.uiBuy();
+            window.PD.save();
+            this._renderStation();
+          }, false);
+        } else {
+          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+        }
+      }
       const d = document.createElement('div');
       d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
       d.textContent = 'Procedural economy — prices reshuffle on every visit. Outposts on Terra, Verdant & Novara trade too.';
@@ -968,7 +1029,46 @@
       close.textContent = 'LEAVE  [E]';
       close.addEventListener('click', () => this.menuClose());
       m.appendChild(close);
-    },
+      // planetary gear at trader (lower stock probability)
+      const tStock = this._marketStock('p' + window.PD.planetIndex);
+      const pg = document.createElement('div');
+      pg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">PLANETARY GEAR</div>';
+      m.appendChild(pg);
+      if(tStock.energyCells > 0){
+        this._row(m, 'Energy Cells', 'ammo for ranged weapons · ' + tStock.energyCells + ' in stock', '30 CR', 'BUY', () => {
+          if(PD.credits < 30) return;
+          PD.credits -= 30;
+          PD.energyCells++;
+          tStock.energyCells--;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderTrade();
+        }, false);
+      } else {
+        this._row(m, 'Energy Cells', 'ammo for ranged weapons · out of stock', '30 CR', '—', () => {}, true);
+      }
+      for(const wk in window.WEAPON_DEFS){
+        const wd = window.WEAPON_DEFS[wk];
+        const owned = PD.hasWeapon(wk);
+        const inStock = tStock.weapons[wk] > 0;
+        if(owned){
+          this._row(m, wd.name, 'already owned', '—', '—', () => {}, true);
+        } else if(inStock){
+          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', wd.cost + ' CR', 'BUY', () => {
+            if(PD.credits < wd.cost) return;
+            PD.credits -= wd.cost;
+            PD.weapons.push(wk);
+            if(!PD.equippedWeapon) PD.equippedWeapon = wk;
+            delete tStock.weapons[wk];
+            window.GameAudio.uiBuy();
+            window.PD.save();
+            this._renderTrade();
+          }, false);
+        } else {
+          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+        }
+      }
+          },
 
     // ---------- HUD ----------
     uiToast(txt){
@@ -1061,6 +1161,20 @@
           if(medkitEl.parentElement) medkitEl.parentElement.style.display = '';
         } else {
           if(medkitEl.parentElement) medkitEl.parentElement.style.display = 'none';
+        }
+      }
+      // equipped weapon + energy cells in planet HUD
+      if(isPlanet){
+        const wepEl = document.getElementById('wep-txt');
+        if(wepEl){
+          if(PD.equippedWeapon){
+            const w = window.WEAPON_DEFS[PD.equippedWeapon];
+            wepEl.textContent = 'WEAPON · ' + w.name + '  CELLS ×' + PD.energyCells;
+            if(wepEl.parentElement) wepEl.parentElement.style.display = '';
+          } else {
+            wepEl.textContent = 'WEAPON · NONE  CELLS ×' + PD.energyCells;
+            if(wepEl.parentElement) wepEl.parentElement.style.display = '';
+          }
         }
       }
 

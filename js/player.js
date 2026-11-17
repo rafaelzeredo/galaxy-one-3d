@@ -41,6 +41,13 @@
     weapon:    { name: 'Turret Array',     desc: '+6 laser damage',        cost: 520 },
     hyperdrive:{ name: 'Hyperdrive',       desc: 'jump to another star system', cost: 800 }
   };
+
+  // Planetary ranged weapons: purchased once, then usable on planetary surfaces
+  // when Energy Cells are available. Each shot consumes one Energy Cell.
+  const WEAPON_DEFS = {
+    laserpistol: { name: 'Laser Pistol',  desc: 'controlled, slower firing', dmg: 10, delay: 0.50, cost: 250 },
+    assaultrifle:{ name: 'Assault Rifle', desc: 'faster firing',            dmg:  6, delay: 0.20, cost: 400 }
+  };
   const MODULE_SLOTS = 3;
   const MODULE_STORE_CAP = 5;
 
@@ -121,6 +128,10 @@
     planetIndex: 0,
     systemIdx: 0,               // active star system (index into SYSTEMS)
     playerHp: 100,              // player health on planetary surface (separate from ship hp)
+    weapons: [],                // owned planetary weapon keys
+    equippedWeapon: null,       // currently equipped weapon key
+    energyCells: 0,             // shared ammunition for ranged weapons
+    marketStock: {},            // per-market weapon/ammo stock: { [marketKey]: { energyCells: n, weapons: { key: qty } } }
     alive: true,
 
     hullMax(){ return 60 + this.up.hull * 40; },
@@ -135,6 +146,11 @@
     maxSpeed(){ return 70 + this.up.engine * 26; },
     // Target scanner: L1 = 3.0s to lock, each level shaves it down to 0.5s at L5.
     scannerLockTime(){ return Math.max(0.5, 3 - (this.up.scanner - 1) * 0.625); },
+    // Planetary weapon helpers
+    hasWeapon(k){ return this.weapons.indexOf(k) >= 0; },
+    equipWeapon(k){ if(this.hasWeapon(k)) this.equippedWeapon = k; },
+    weaponDmg(){ const w = WEAPON_DEFS[this.equippedWeapon]; return w ? w.dmg : 0; },
+    weaponDelay(){ const w = WEAPON_DEFS[this.equippedWeapon]; return w ? w.delay : 0; },
     cargoMax(){ return 40 + this.up.hull * 10 + this.installed.filter(m => m === 'cargo').length * 20; },
     cargoUsed(){
       let n = 0;
@@ -257,7 +273,11 @@
           modules: this.modules, missions: this.missions,
           missionsDone: this.missionsDone,
           systemIdx: this.systemIdx,
-          playerHp: this.playerHp
+          playerHp: this.playerHp,
+          weapons: this.weapons,
+          equippedWeapon: this.equippedWeapon,
+          energyCells: this.energyCells,
+          marketStock: this.marketStock
         }));
       }catch(e){}
     },
@@ -279,6 +299,10 @@
         const sys = s.systemIdx | 0;
         this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
         this.playerHp = s.playerHp != null ? s.playerHp : this.playerHpMax();
+        if(Array.isArray(s.weapons)) this.weapons = s.weapons.filter(k => WEAPON_DEFS[k]);
+        this.equippedWeapon = s.equippedWeapon != null && this.hasWeapon(s.equippedWeapon) ? s.equippedWeapon : null;
+        this.energyCells = s.energyCells != null ? s.energyCells | 0 : 0;
+        if(s.marketStock && typeof s.marketStock === 'object') this.marketStock = s.marketStock;
       }catch(e){}
     },
     // Start a completely fresh game: reset all progression to starting values
@@ -298,6 +322,10 @@
       this.planetIndex = 0;
       this.systemIdx = 0;
       this.playerHp = 100;
+      this.weapons = [];
+      this.equippedWeapon = null;
+      this.energyCells = 0;
+      this.marketStock = {};
       // clear per-planet surface state so no harvested nodes or aliens persist
       if(this.surfaceStates){
         for(const k in this.surfaceStates) delete this.surfaceStates[k];
@@ -327,4 +355,5 @@
   window.MODULE_DEFS = MODULE_DEFS;
   window.MODULE_SLOTS = MODULE_SLOTS;
   window.MODULE_STORE_CAP = MODULE_STORE_CAP;
+  window.WEAPON_DEFS = WEAPON_DEFS;
 })();

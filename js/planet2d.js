@@ -274,14 +274,19 @@
       // shoot
       this.fireT -= dt;
       if(shooting && this.fireT <= 0){
-        this.fireT = 0.28;
-        this.fireFlash = 0.08;
-        this.bullets.push({
-          x: p.x + Math.cos(p.aim) * 14, y: p.y + Math.sin(p.aim) * 14,
-          vx: Math.cos(p.aim) * 420, vy: Math.sin(p.aim) * 420, life: 0.9, friendly: true
-        });
-        this._spawnFx(p.x + Math.cos(p.aim) * 18, p.y + Math.sin(p.aim) * 18, '#aef2ff', 2, 60, 1.6, true, 0.25);
-        window.GameAudio.shoot2d();
+        const w = WEAPON_DEFS[window.PD.equippedWeapon];
+        if(w && window.PD.energyCells > 0){
+          this.fireT = w.delay;
+          window.PD.energyCells--;
+          this.fireFlash = 0.08;
+          this.bullets.push({
+            x: p.x + Math.cos(p.aim) * 14, y: p.y + Math.sin(p.aim) * 14,
+            vx: Math.cos(p.aim) * 420, vy: Math.sin(p.aim) * 420, life: 0.9, friendly: true,
+            dmg: w.dmg
+          });
+          this._spawnFx(p.x + Math.cos(p.aim) * 18, p.y + Math.sin(p.aim) * 18, '#aef2ff', 2, 60, 1.6, true, 0.25);
+          window.GameAudio.shoot2d();
+        }
       }
 
       // fx particles (chips, goo, sparks)
@@ -304,7 +309,7 @@
           for(let a = this.aliens.length - 1; a >= 0; a--){
             const al = this.aliens[a];
             if(Math.hypot(al.x - b.x, al.y - b.y) < 16){
-              al.hp -= 12;
+              al.hp -= b.dmg || 12;
               this.bullets.splice(i, 1);
               this._spawnFx(b.x, b.y, this.pal.alien, 4, 95, 2.2, true, 0.4);
               window.GameAudio.laserHit();
@@ -354,6 +359,18 @@
             if(d < 24 && al.atkT <= 0){
               al.atkT = 0.9;
               this._hurt(al.spitter ? 10 : 8 + this.planet.alienRate * 3);
+              // always-active melee: player inflicts damage on contact, no weapon or ammo needed
+              al.hp -= 8;
+              if(al.hp <= 0){
+                this.aliens.splice(this.aliens.indexOf(al), 1);
+                this.state.stats.kills++;
+                this._spawnFx(al.x, al.y, this.pal.alien, 12, 130, 3, true, 0.6);
+                this._spawnFx(al.x, al.y, '#0e0a12', 5, 70, 2.4, false, 0.5);
+                window.GameAudio.alienDie();
+                const roll = Math.random();
+                if(roll < 0.55) this._give('goo', 1);
+                else if(roll < 0.65) this._give('crystal', 1);
+              }
             }
           }
         } else {
@@ -455,6 +472,9 @@
       if(inp.pressed('KeyE') && target && kind === 'trader'){
         window.Game.openTrade();
       }
+      // weapon switching: 1 = Laser Pistol, 2 = Assault Rifle
+      if(inp.pressed('Digit1') && window.PD.hasWeapon('laserpistol')){ window.PD.equipWeapon('laserpistol'); }
+      if(inp.pressed('Digit2') && window.PD.hasWeapon('assaultrifle')){ window.PD.equipWeapon('assaultrifle'); }
 
       if(this.hitFlash > 0) this.hitFlash -= dt;
       if(this.enterFlash > 0) this.enterFlash = Math.max(0, this.enterFlash - dt * 1.1);
@@ -791,10 +811,11 @@
           ctx.moveTo(al.x + 8, al.y - 8); ctx.lineTo(al.x + 12, al.y - 14);
           ctx.stroke();
         }
-        if(al.hp < (al.spitter ? 26 : 16)){
-          ctx.fillStyle = '#ff5f7a';
-          ctx.fillRect(al.x - 10, al.y - 18, 20 * Math.max(0, al.hp / (al.spitter ? 26 : 16)), 3);
-        }
+        // alien health bar (always visible)
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(al.x - 10, al.y - 18, 20, 3);
+        ctx.fillStyle = '#ff5f7a';
+        ctx.fillRect(al.x - 10, al.y - 18, 20 * Math.max(0, al.hp / (al.spitter ? 26 : 16)), 3);
       }
 
       // bullets with glowing trails
@@ -894,6 +915,29 @@
       if(this.hitFlash > 0){
         ctx.fillStyle = 'rgba(255,60,80,' + (this.hitFlash * 0.4).toFixed(2) + ')';
         ctx.fillRect(0, 0, vw, vh);
+      }
+      // planetary HUD: equipped weapon + energy cells
+      if(window.PD.equippedWeapon){
+        const w = WEAPON_DEFS[window.PD.equippedWeapon];
+        ctx.fillStyle = 'rgba(4,10,20,0.75)';
+        ctx.fillRect(16, 16, 200, 44);
+        ctx.strokeStyle = 'rgba(95,240,255,0.3)';
+        ctx.strokeRect(16, 16, 200, 44);
+        ctx.fillStyle = '#5ff0ff';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(w.name + '  DMG ' + w.dmg + '  DELAY ' + w.delay.toFixed(2) + 's', 26, 34);
+        ctx.fillStyle = '#ffd479';
+        ctx.fillText('ENERGY CELLS ×' + window.PD.energyCells, 26, 52);
+        // owned weapons
+        let ox = 26;
+        for(const wk of window.PD.weapons){
+          const wd = WEAPON_DEFS[wk];
+          const active = window.PD.equippedWeapon === wk;
+          ctx.fillStyle = active ? '#5ff0ff' : '#8fc6d8';
+          ctx.fillText((active ? '▶ ' : '  ') + wd.name, ox + 110, 34);
+          ox += 100;
+        }
       }
       // atmosphere tint + vignette
       ctx.fillStyle = this.pal.tint;
