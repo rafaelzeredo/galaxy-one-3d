@@ -259,11 +259,51 @@
         const sys = s.systemIdx | 0;
         this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
       }catch(e){}
+    },
+    // Start a completely fresh game: reset all progression to starting values
+    // and clear the save slot so nothing carries over from a previous run.
+    newGame(){
+      this.credits = 400;
+      this.medkits = 1;
+      this.cargo = { ore: 0, wood: 0, crystal: 0, goo: 0 };
+      this.trade = { food: 0, tech: 0, med: 0, lux: 0 };
+      this.up = { weapon: 1, engine: 1, hull: 1, shield: 1, scanner: 1 };
+      this.installed = [];
+      this.modules = [];
+      this.missions = [];
+      this.missionsDone = 0;
+      this.rates = null;
+      this.spaceSaved = null;
+      this.planetIndex = 0;
+      this.systemIdx = 0;
+      // clear per-planet surface state so no harvested nodes or aliens persist
+      if(this.surfaceStates){
+        for(const k in this.surfaceStates) delete this.surfaceStates[k];
+      }
+      // clear the save slot; the auto-save during play writes the fresh state
+      try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+      this.resetShipState();
+      this.rollMarkets();
+    },
+    // Reports whether a save slot exists on disk.
+    hasSave(){
+      try{ return localStorage.getItem(SAVE_KEY) != null; }catch(e){ return false; }
+    },
+    save(){
+      try{
+        localStorage.setItem(SAVE_KEY, JSON.stringify({
+          credits: this.credits, medkits: this.medkits, cargo: this.cargo,
+          trade: this.trade, up: this.up, installed: this.installed,
+          modules: this.modules, missions: this.missions,
+          missionsDone: this.missionsDone,
+          systemIdx: this.systemIdx
+        }));
+      }catch(e){}
     }
   };
   P.resetShipState();
-  P.rollMarkets();
   P.load();
+  P.rollMarkets();
   window.PD = P;
   window.SYSTEMS = SYSTEMS;
   window.buildGalaxy = buildGalaxy;

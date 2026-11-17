@@ -26,11 +26,27 @@
       window.Space.init(this.els.space);
       window.Planet.init(this.hudCtx);
       const self = this;
-      document.getElementById('btn-start').addEventListener('click', () => {
+      // Start screen: Continue or New Game
+      const btnContinue = document.getElementById('btn-continue');
+      const btnNew = document.getElementById('btn-new');
+      const startGame = (fresh) => {
+        if(fresh){
+          window.PD.newGame();
+          window.PD.save();
+        }
         window.GameAudio.init(); window.GameAudio.resume(); window.GameAudio.warp();
         self.els.start.classList.add('hidden');
         self._toSpace(true);
-      });
+        // ensure only the current system's bodies exist in the active world
+        window.Space.syncWorld();
+      };
+      if(btnContinue){
+        btnContinue.disabled = !window.PD.hasSave();
+        btnContinue.addEventListener('click', () => startGame(false));
+      }
+      if(btnNew){
+        btnNew.addEventListener('click', () => startGame(true));
+      }
       window.addEventListener('resize', () => this._resize());
       this._resize();
       // boot loop
@@ -106,6 +122,8 @@
       this.els.hudDom.classList.remove('hidden');
       this.els.cross.classList.remove('hidden');
       this.els.hud.style.pointerEvents = 'none';
+      // ensure only the current system's bodies exist in the active world
+      window.Space.syncWorld();
     },
 
     landOn(planetIdx){
