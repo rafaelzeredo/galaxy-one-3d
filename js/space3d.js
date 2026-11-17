@@ -86,9 +86,9 @@
       this.lockNeed = 3;      // current lock time from scanner level
       this.locked = false;    // true once lockT >= lockNeed
       // quick travel (warp) state
-      this.warpTo = null;     // { pos, name, planetIdx } once a target is fully scanned
+      this.warpTo = null;     // { pos, name, kind, idx } once a target is fully scanned
       this.warpPrompt = '';
-      this.warp = null;       // { pos, name, phase, t } while warping
+      this.warp = null;       // { pos, name, kind, phase, t } while warping
       this.thrustS = 0;       // smoothed thrust 0..1
       this.bank = 0;          // visual bank angle
       // shared geometries/materials (performance: no per-particle allocation)
@@ -340,11 +340,14 @@
         const st = this.stations[idx];
         if(!st) return false;
         pos = st.grp.position.clone(); name = st.def.name;
+        window.PD.systemIdx = st.def.sys;
       } else {
         const pm = this.planetMeshes[idx], d = window.PLANETS[idx];
         if(!pm || !d) return false;
         pos = pm.position.clone(); name = d.name;
+        window.PD.systemIdx = d.sys;
       }
+      window.PD.save();
       const dir = this.ship.position.clone().sub(pos);
       if(dir.length() < 1) dir.set(0, 0, 1);
       dir.normalize();
@@ -523,6 +526,8 @@
       this.vel = V3(0, 0, 0);
       for(const p of this.pirates) this.scene.remove(p.mesh);
       this.pirates.length = 0;
+      window.PD.systemIdx = 0; // rebuilt at ORION STATION
+      window.PD.save();
       window.PD.resetShipState();
     },
 
@@ -880,7 +885,8 @@
           const dir = wt.pos.clone().sub(this.ship.position).normalize();
           // orient the ship at the destination, then spool up
           this.ship.quaternion.setFromUnitVectors(V3(0, 0, -1), dir);
-          this.warp = { pos: wt.pos.clone(), name: wt.name, phase: 'charge', t: 0 };
+          this.warp = { pos: wt.pos.clone(), name: wt.name, phase: 'charge', t: 0,
+            kind: wt.kind, idx: wt.idx };
           this.vel.set(0, 0, 0);
           window.GameAudio.engine(0.2);
           window.Game.uiToast('⇢ WARP SPOOLING — ' + wt.name);
@@ -948,6 +954,8 @@
           if(distT < 45){ // reached the arrival pad
             this.vel.set(0, 0, 0);
             this.ship.position.copy(this.warp.pos);
+            window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);
+            window.PD.save();
             window.Game.uiToast('⇢ ARRIVED — ' + this.warp.name);
             window.GameAudio.pickup();
             this.warp = null;
@@ -1258,7 +1266,7 @@
         const dist = st.grp.position.distanceTo(this.ship.position);
         v.copy(st.grp.position).project(this.camera);
         if(v.z < 1) out.push({ id: 's' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station',
-          name: st.def.name, kind: st.def.system, value: 'DOCK · TRADE · MISSIONS', dist,
+          name: st.def.name, kind: window.PD.systemName(st.def.sys), value: 'DOCK · TRADE · MISSIONS', dist,
           size: radToSize(70, dist) });
       }
       return out;

@@ -19,6 +19,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #hud-tl{top:14px;left:14px;width:230px}
 #hud-tr{top:14px;right:14px;width:230px;text-align:right}
 #hud-bl{bottom:14px;left:14px}
+#sys-txt{font-size:10px;letter-spacing:2px;color:#5ff0ff;margin-bottom:8px;text-transform:uppercase}
 .panel.mini{position:absolute;padding:6px 10px;font-size:12px}
 .credits{font-size:17px;color:var(--amber);font-weight:700;letter-spacing:1px;margin-bottom:6px}
 #cargo-lines{font-size:11px;line-height:1.5;color:#9fd8e8;margin-bottom:4px}

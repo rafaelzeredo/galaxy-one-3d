@@ -43,6 +43,16 @@
   const MODULE_SLOTS = 3;
   const MODULE_STORE_CAP = 5;
 
+  // ---- star systems: the single authoritative source of universe membership ----
+  // Every planet and station carries a `sys` index into this table. The galaxy
+  // map (Game.GALAXY) is derived from it, so membership lives in exactly one
+  // place. `hub` is the system's station index (used later for respawns).
+  const SYSTEMS = [
+    { name: 'ORION REACH',   hub: 0, planets: [0, 1] },
+    { name: 'KRELL EXPANSE', hub: 1, planets: [2, 3] },
+    { name: 'NOVARA SPUR',   hub: 2, planets: [4, 5] }
+  ];
+
   const PLANETS = [
     { name: 'TERRA PRIME', type: 'peaceful', color: 0x4d8fe0, size: 110,
       x: 420,  y: 60,  z: -900,  seed: 11, alienRate: 0.25, treeN: 90, crystalN: 8,
@@ -64,12 +74,37 @@
       rockN: 55, trader: false, desc: 'Dark groves · crystal veins' }
   ];
 
-  // Star systems shown on the galaxy map (Tab): each station anchors a system.
+  // Stations anchor their system. Membership is not duplicated here: the `sys`
+  // index is assigned below from SYSTEMS (SYSTEMS[hub]).
   const STATIONS = [
-    { key: 'station', name: 'ORION STATION', pos: [0, 0, 0], system: 'ORION REACH' },
-    { key: 'depot',   name: 'KRELL DEPOT',   pos: [1150, -100, 1050], system: 'KRELL EXPANSE' },
-    { key: 'gate',    name: 'NOVARA GATE',   pos: [1900, -150, -1600], system: 'NOVARA SPUR' }
+    { key: 'station', name: 'ORION STATION', pos: [0, 0, 0] },
+    { key: 'depot',   name: 'KRELL DEPOT',   pos: [1150, -100, 1050] },
+    { key: 'gate',    name: 'NOVARA GATE',   pos: [1900, -150, -1600] }
   ];
+
+  // ---- link bodies to systems ------------------------------------------------
+  // SYSTEMS is the single authoritative membership table. Planets and stations
+  // receive their `sys` index from it, so there is exactly one definition of
+  // which body belongs to which star system.
+  SYSTEMS.forEach((sys, si) => {
+    sys.idx = si;
+    for(const pi of sys.planets){
+      if(PLANETS[pi]) PLANETS[pi].sys = si;
+    }
+    if(STATIONS[sys.hub]) STATIONS[sys.hub].sys = si;
+  });
+
+  // Derive the galaxy-map structure from SYSTEMS. Kept here so Game.GALAXY can
+  // be a view of this table instead of a second, hand-maintained copy.
+  function buildGalaxy(){
+    return SYSTEMS.map((sys, si) => ({
+      name: sys.name,
+      sys: si,
+      bodies: [{ kind: 'station', idx: sys.hub }].concat(
+        sys.planets.map(idx => ({ kind: 'planet', idx }))
+      )
+    }));
+  }
 
   const P = {
     hp: 100, shield: 0, credits: 400, medkits: 1,
@@ -83,6 +118,7 @@
     rates: null,          // procedural market rates (rerolled per visit)
     spaceSaved: null,           // ship pos/quat while landed
     planetIndex: 0,
+    systemIdx: 0,               // active star system (index into SYSTEMS)
     alive: true,
 
     hullMax(){ return 60 + this.up.hull * 40; },
@@ -103,6 +139,14 @@
     scoopRadius(){ return this.installed.indexOf('retrieval') >= 0 ? 95 : 26; },
     hasModule(k){ return this.installed.indexOf(k) >= 0; },
     hasModuleStored(k){ return this.modules.indexOf(k) >= 0; },
+    // display name of a star system (tolerates out-of-range indices)
+    systemName(i){ const s = SYSTEMS[i]; return s ? s.name : SYSTEMS[0].name; },
+    // system index for any body kind ('planet' | 'station'); falls back to ORION REACH
+    systemOf(kind, idx){
+      const list = kind === 'station' ? STATIONS : PLANETS;
+      const body = list[idx];
+      return body && body.sys != null ? body.sys : 0;
+    },
 
     // ---- procedural economy: market rates reshuffle every visit ----
     // Base template biases the spread (routes still exist) but each reroll
@@ -191,7 +235,8 @@
           credits: this.credits, medkits: this.medkits, cargo: this.cargo,
           trade: this.trade, up: this.up, installed: this.installed,
           modules: this.modules, missions: this.missions,
-          missionsDone: this.missionsDone
+          missionsDone: this.missionsDone,
+          systemIdx: this.systemIdx
         }));
       }catch(e){}
     },
@@ -208,6 +253,10 @@
         if(Array.isArray(s.modules)) this.modules = s.modules.filter(k => MODULE_DEFS[k]).slice(0, MODULE_STORE_CAP);
         if(Array.isArray(s.missions)) this.missions = s.missions.slice(0, 3);
         this.missionsDone = s.missionsDone | 0;
+        // Backward compatibility: saves written before Stage A have no systemIdx,
+        // and must continue to load into ORION REACH (index 0).
+        const sys = s.systemIdx | 0;
+        this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
       }catch(e){}
     }
   };
@@ -215,6 +264,8 @@
   P.rollMarkets();
   P.load();
   window.PD = P;
+  window.SYSTEMS = SYSTEMS;
+  window.buildGalaxy = buildGalaxy;
   window.COMMS = COMMS;
   window.PLANETS = PLANETS;
   window.STATIONS = STATIONS;

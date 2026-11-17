@@ -1,0 +1,9 @@
+{
+  "name": "galaxy-one-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GALAXY ONE — 3D space combat/trading + 2D planet survival (vanilla JS)",
+  "scripts": {
+    "test": "node --test"
+  }
+}

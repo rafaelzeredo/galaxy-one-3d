@@ -110,6 +110,11 @@
 
     landOn(planetIdx){
       if(this.state !== 'space') return;
+      const planet = window.PLANETS[planetIdx];
+      if(planet){
+        window.PD.systemIdx = planet.sys;
+        window.PD.save();
+      }
       window.GameAudio.land();
       window.Space.saveForLanding();
       this._fade(() => {
@@ -181,6 +186,11 @@
       this.menuOpenNow = true;
       this.galaxyOpen = false;
       this.stationIdx = Math.max(0, window.Space.nearStationIdx);
+      const station = window.STATIONS[this.stationIdx];
+      if(station){
+        window.PD.systemIdx = station.sys;
+        window.PD.save();
+      }
       // procedural economy: prices reshuffle every visit (all markets)
       window.PD.rollMarkets();
       this.visitN++;
@@ -467,18 +477,14 @@
     },
 
     // ---------- galaxy map (Tab): direct travel to any system body ----------
-    GALAXY: [
-      { name: 'ORION REACH', bodies: [
-        { kind: 'station', idx: 0 }, { kind: 'planet', idx: 0 }, { kind: 'planet', idx: 1 }] },
-      { name: 'KRELL EXPANSE', bodies: [
-        { kind: 'station', idx: 1 }, { kind: 'planet', idx: 2 }, { kind: 'planet', idx: 3 }] },
-      { name: 'NOVARA SPUR', bodies: [
-        { kind: 'station', idx: 2 }, { kind: 'planet', idx: 4 }, { kind: 'planet', idx: 5 }] }
-    ],
+    // Derived from SYSTEMS (see js/player.js); never a second hand-maintained
+    // copy. Keeping it a getter means the map always reflects the authoritative
+    // system table.
+    get GALAXY(){ return window.buildGalaxy(); },
     _bodyInfo(b){
       if(b.kind === 'station'){
         const st = window.STATIONS[b.idx];
-        return { name: st.name, sub: st.system, color: '#ffd25f', pos: st.pos };
+        return { name: st.name, sub: window.PD.systemName(st.sys), color: '#ffd25f', pos: st.pos };
       }
       const p = window.PLANETS[b.idx];
       return { name: p.name, sub: p.type.toUpperCase() + ' · ' + p.desc,
@@ -487,12 +493,20 @@
     _renderGalaxy(){
       const PD = window.PD;
       const m = this.els.menuInner;
+      const curSys = PD.systemIdx | 0;
+      const curName = PD.systemName(curSys);
+      const bodyCount = window.SYSTEMS.reduce((n, s) => n + 1 + (s.planets ? s.planets.length : 0), 0);
       m.innerHTML = '<h2>GALAXY MAP</h2><div class="sub">◈ ' + PD.credits +
-        ' CR · 3 systems · 9 bodies · [TAB] to close</div>';
+        ' CR · ' + window.SYSTEMS.length + ' systems · ' + bodyCount + ' bodies · [TAB] to close</div>' +
+        '<div class="bar-label" style="margin:4px 0 8px;color:#5ff0ff">CURRENT SYSTEM · ' +
+        curName + '</div>';
       const S = window.Space;
       for(const sys of this.GALAXY){
+        const hereSys = sys.sys === curSys;
         const sh = document.createElement('div');
-        sh.innerHTML = '<div class="bar-label" style="margin:10px 0 6px">' + sys.name + '</div>';
+        sh.innerHTML = '<div class="bar-label" style="margin:10px 0 6px' +
+          (hereSys ? ';color:#5ff0ff' : '') + '">' + sys.name +
+          (hereSys ? ' ◀ CURRENT' : '') + '</div>';
         m.appendChild(sh);
         for(const b of sys.bodies){
           const info = this._bodyInfo(b);
@@ -814,6 +828,9 @@
 
     _renderHudDom(){
       const PD = window.PD;
+      // current star system readout (source of truth: SYSTEMS via PD)
+      const sysEl = document.getElementById('sys-txt');
+      if(sysEl) sysEl.textContent = '◈ SYSTEM · ' + PD.systemName(PD.systemIdx);
       document.getElementById('credits-txt').textContent = window.PD.credits;
       document.getElementById('hp-txt').textContent = Math.ceil(window.PD.hp) + '/' + window.PD.hullMax();
       document.getElementById('hp-bar').style.width = (100 * window.PD.hp / window.PD.hullMax()) + '%';
@@ -1029,5 +1046,6 @@
     if(el){ el.style.display = 'block'; el.innerText = 'ERROR: ' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''); }
   });
   window.Game = G;
-  window.Game.init();
+  // Tests load this file to inspect the derived galaxy without booting WebGL.
+  if(window.__GALAXY_TEST__ !== true) window.Game.init();
 })();
