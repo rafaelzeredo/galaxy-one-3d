@@ -151,6 +151,31 @@
     equipWeapon(k){ if(this.hasWeapon(k)) this.equippedWeapon = k; },
     weaponDmg(){ const w = WEAPON_DEFS[this.equippedWeapon]; return w ? w.dmg : 0; },
     weaponDelay(){ const w = WEAPON_DEFS[this.equippedWeapon]; return w ? w.delay : 0; },
+    // Sell an owned planetary weapon. Removes it from the inventory, refunds
+    // 60% of its cost, and re-equips another owned weapon if the sold one was
+    // active. Returns the refund amount or 0 if the weapon is not owned.
+    sellWeapon(k){
+      if(!this.hasWeapon(k)) return 0;
+      const wd = WEAPON_DEFS[k];
+      const refund = Math.round(wd.cost * 0.6);
+      this.weapons = this.weapons.filter(w => w !== k);
+      if(this.equippedWeapon === k){
+        this.equippedWeapon = this.weapons.length > 0 ? this.weapons[0] : null;
+      }
+      this.credits += refund;
+      this.save();
+      return refund;
+    },
+    // Sell energy cells. Deducts n from inventory (capped at what's owned),
+    // refunds 90% of the station buy price per cell. Returns the refund amount.
+    sellEnergyCells(n){
+      n = Math.min(n | 0, this.energyCells);
+      if(n <= 0) return 0;
+      this.energyCells -= n;
+      this.credits += Math.round(25 * 0.9 * n);
+      this.save();
+      return Math.round(25 * 0.9 * n);
+    },
     cargoMax(){ return 40 + this.up.hull * 10 + this.installed.filter(m => m === 'cargo').length * 20; },
     cargoUsed(){
       let n = 0;

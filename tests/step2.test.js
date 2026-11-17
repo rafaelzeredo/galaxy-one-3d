@@ -500,3 +500,247 @@ test('cannot fire without energy cells', () => {
   assert.equal(PD.energyCells, 0);
   // Weapon equipped but no ammo - cannot fire
 });
+
+// ---- Step 3A Fix: Weapon switching, HUD icons, selling weapons/ammo ----
+
+test('PD.sellWeapon removes owned weapon and refunds credits', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol', 'assaultrifle'];
+  PD.equippedWeapon = 'laserpistol';
+  PD.credits = 100;
+  const refund = PD.sellWeapon('laserpistol');
+  assert.equal(refund, Math.round(250 * 0.6), 'refund is 60% of cost');
+  assert.equal(PD.credits, 100 + refund, 'credits increased by refund');
+  assert.equal(PD.hasWeapon('laserpistol'), false, 'weapon no longer owned');
+  assert.equal(PD.equippedWeapon, 'assaultrifle', 're-equipped remaining weapon');
+});
+
+test('PD.sellWeapon returns 0 for unowned weapon', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.credits = 100;
+  const refund = PD.sellWeapon('laserpistol');
+  assert.equal(refund, 0, 'no refund for unowned weapon');
+  assert.equal(PD.credits, 100, 'credits unchanged');
+});
+
+test('PD.sellWeapon selling last weapon keeps equippedWeapon null', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol'];
+  PD.equippedWeapon = 'laserpistol';
+  PD.credits = 100;
+  const refund = PD.sellWeapon('laserpistol');
+  assert.equal(PD.hasWeapon('laserpistol'), false);
+  assert.equal(PD.equippedWeapon, null, 'no equipped weapon when none owned');
+  assert.equal(PD.weaponDmg(), 0, 'no weapon damage');
+});
+
+test('PD.sellEnergyCells deducts cells and refunds', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.energyCells = 10;
+  PD.credits = 100;
+  const refund = PD.sellEnergyCells(3);
+  assert.equal(refund, Math.round(25 * 0.9 * 3), 'refund for 3 cells');
+  assert.equal(PD.energyCells, 7, 'cells deducted');
+  assert.equal(PD.credits, 100 + refund, 'credits increased');
+});
+
+test('PD.sellEnergyCells caps at owned amount', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.energyCells = 2;
+  PD.credits = 100;
+  const refund = PD.sellEnergyCells(100);
+  assert.equal(refund, Math.round(25 * 0.9 * 2), 'only sells owned cells');
+  assert.equal(PD.energyCells, 0, 'all cells sold');
+});
+
+test('PD.sellEnergyCells returns 0 when no cells', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.energyCells = 0;
+  PD.credits = 100;
+  const refund = PD.sellEnergyCells(5);
+  assert.equal(refund, 0, 'no refund when no cells');
+  assert.equal(PD.credits, 100, 'credits unchanged');
+});
+
+test('G key switches between owned weapons', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol', 'assaultrifle'];
+  PD.equippedWeapon = 'laserpistol';
+  // Simulate pressing G once
+  const idx = PD.weapons.indexOf(PD.equippedWeapon);
+  const next = PD.weapons[(idx + 1) % PD.weapons.length];
+  PD.equipWeapon(next);
+  assert.equal(PD.equippedWeapon, 'assaultrifle', 'switched to assault rifle');
+  // Press G again
+  const idx2 = PD.weapons.indexOf(PD.equippedWeapon);
+  const next2 = PD.weapons[(idx2 + 1) % PD.weapons.length];
+  PD.equipWeapon(next2);
+  assert.equal(PD.equippedWeapon, 'laserpistol', 'switched back to laser pistol');
+});
+
+test('G key switching does not consume energy cells', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol', 'assaultrifle'];
+  PD.equippedWeapon = 'laserpistol';
+  PD.energyCells = 5;
+  const before = PD.energyCells;
+  // Switch twice
+  PD.equipWeapon('assaultrifle');
+  PD.equipWeapon('laserpistol');
+  assert.equal(PD.energyCells, before, 'energy cells unchanged after switching');
+});
+
+test('single weapon remains selected without G switch needed', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol'];
+  PD.equippedWeapon = 'laserpistol';
+  // Only one weapon - equipping it again keeps it
+  PD.equipWeapon('laserpistol');
+  assert.equal(PD.equippedWeapon, 'laserpistol');
+  assert.equal(PD.weapons.length, 1);
+});
+
+test('melee remains available after selling last weapon', () => {
+  const { window } = loadPlayer();
+  const PD = window.PD;
+  PD.weapons = ['laserpistol'];
+  PD.equippedWeapon = 'laserpistol';
+  PD.sellWeapon('laserpistol');
+  assert.equal(PD.equippedWeapon, null, 'no weapon equipped');
+  assert.equal(PD.weaponDmg(), 0, 'no weapon damage');
+  // playerHp-based melee is independent - still works
+  PD.playerHp = 100;
+  PD.playerDmg(10);
+  assert.equal(PD.playerHp, 90, 'player can still take melee damage');
+});
+
+test('weapon HUD shows icon and name when equipped', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+  window.Planet = { prompt: '' };
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.equippedWeapon = 'laserpistol';
+  PD.energyCells = 10;
+  const wepEl = { innerHTML: '', parentElement: { style: {} } };
+  document.getElementById = (id) => {
+    if(id === 'wep-txt') return wepEl;
+    if(id === 'hp-txt') return { textContent: '', parentElement: { childNodes: [] } };
+    if(id === 'hp-bar') return { style: {} };
+    if(id === 'sh-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'spd-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: { style: {} } };
+    if(id === 'sys-txt') return { textContent: '' };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+  Game._renderHudDom();
+  assert.ok(wepEl.innerHTML.includes('Laser Pistol'), 'shows laser pistol name');
+  assert.ok(wepEl.innerHTML.includes('CELLS ×10'), 'shows energy cell count');
+  assert.ok(wepEl.innerHTML.includes('⚬|'), 'shows pistol icon');
+});
+
+test('weapon HUD shows assault rifle icon when equipped', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+  window.Planet = { prompt: '' };
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.equippedWeapon = 'assaultrifle';
+  PD.energyCells = 3;
+  const wepEl = { innerHTML: '', parentElement: { style: {} } };
+  document.getElementById = (id) => {
+    if(id === 'wep-txt') return wepEl;
+    if(id === 'hp-txt') return { textContent: '', parentElement: { childNodes: [] } };
+    if(id === 'hp-bar') return { style: {} };
+    if(id === 'sh-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'spd-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: { style: {} } };
+    if(id === 'sys-txt') return { textContent: '' };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+  Game._renderHudDom();
+  assert.ok(wepEl.innerHTML.includes('Assault Rifle'), 'shows assault rifle name');
+  assert.ok(wepEl.innerHTML.includes('⚬|='), 'shows rifle icon');
+  assert.ok(wepEl.innerHTML.includes('CELLS ×3'), 'shows energy cell count');
+});
+
+test('weapon HUD shows G switch hint when both weapons owned', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+  window.Planet = { prompt: '' };
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.equippedWeapon = 'laserpistol';
+  PD.weapons = ['laserpistol', 'assaultrifle'];
+  PD.energyCells = 5;
+  const wepEl = { innerHTML: '', parentElement: { style: {} } };
+  document.getElementById = (id) => {
+    if(id === 'wep-txt') return wepEl;
+    if(id === 'hp-txt') return { textContent: '', parentElement: { childNodes: [] } };
+    if(id === 'hp-bar') return { style: {} };
+    if(id === 'sh-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'spd-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: { style: {} } };
+    if(id === 'sys-txt') return { textContent: '' };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+  Game._renderHudDom();
+  assert.ok(wepEl.innerHTML.includes('[G] switch'), 'shows G switch hint when both owned');
+});
+
+test('weapon HUD hides G switch hint when only one weapon owned', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+  window.Planet = { prompt: '' };
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.equippedWeapon = 'laserpistol';
+  PD.weapons = ['laserpistol'];
+  PD.energyCells = 5;
+  const wepEl = { innerHTML: '', parentElement: { style: {} } };
+  document.getElementById = (id) => {
+    if(id === 'wep-txt') return wepEl;
+    if(id === 'hp-txt') return { textContent: '', parentElement: { childNodes: [] } };
+    if(id === 'hp-bar') return { style: {} };
+    if(id === 'sh-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'spd-txt') return { textContent: '', parentElement: { style: {}, nextElementSibling: { style: {} } } };
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: { style: {} } };
+    if(id === 'sys-txt') return { textContent: '' };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+  Game._renderHudDom();
+  assert.ok(!wepEl.innerHTML.includes('[G] switch'), 'hides G switch hint with one weapon');
+});

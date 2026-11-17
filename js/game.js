@@ -84,7 +84,7 @@
       this.input = inp;
       window.addEventListener('keydown', e => {
         const c = e.code;
-        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','Tab'].indexOf(c) >= 0) e.preventDefault();
+        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab'].indexOf(c) >= 0) e.preventDefault();
         window.GameAudio.init(); window.GameAudio.resume();
         if(!inp.keys.has(c)) inp.pressedCodes.add(c);
         inp.keys.add(c);
@@ -921,13 +921,29 @@
       } else {
         this._row(m, 'Energy Cells', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
       }
-      // weapons for sale
+      // sell energy cells
+      if(PD.energyCells > 0){
+        this._row(m, 'Sell Energy Cells', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
+          const refund = PD.sellEnergyCells(PD.energyCells);
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold energy cells · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
+      }
+      // weapons for sale / sell
       for(const wk in window.WEAPON_DEFS){
         const wd = window.WEAPON_DEFS[wk];
         const owned = PD.hasWeapon(wk);
         const inStock = stock.weapons[wk] > 0;
         if(owned){
-          this._row(m, wd.name, 'already owned', '—', '—', () => {}, true);
+          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', 'sell ' + Math.round(wd.cost * 0.6) + ' CR', 'SELL', () => {
+            const refund = PD.sellWeapon(wk);
+            window.GameAudio.coin();
+            window.PD.save();
+            this.uiToast('Sold ' + wd.name + ' · +' + refund + ' CR');
+            this._renderStation();
+          }, false);
         } else if(inStock){
           this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', wd.cost + ' CR', 'BUY', () => {
             if(PD.credits < wd.cost) return;
@@ -1169,10 +1185,16 @@
         if(wepEl){
           if(PD.equippedWeapon){
             const w = window.WEAPON_DEFS[PD.equippedWeapon];
-            wepEl.textContent = 'WEAPON · ' + w.name + '  CELLS ×' + PD.energyCells;
+            // simple silhouette icon: pistol = )|  , assault rifle = )|= 
+            const icon = wd => wd === 'laserpistol' ? '⚬|' : '⚬|=';
+            wepEl.innerHTML = icon(PD.equippedWeapon) + ' <b>' + w.name + '</b> · CELLS ×' + PD.energyCells;
+            // show switch hint only when both weapons owned
+            if(PD.weapons.length >= 2){
+              wepEl.innerHTML += '  <span style="color:#8fc6d8">[G] switch</span>';
+            }
             if(wepEl.parentElement) wepEl.parentElement.style.display = '';
           } else {
-            wepEl.textContent = 'WEAPON · NONE  CELLS ×' + PD.energyCells;
+            wepEl.innerHTML = 'WEAPON · NONE  CELLS ×' + PD.energyCells;
             if(wepEl.parentElement) wepEl.parentElement.style.display = '';
           }
         }

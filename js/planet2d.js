@@ -472,7 +472,13 @@
       if(inp.pressed('KeyE') && target && kind === 'trader'){
         window.Game.openTrade();
       }
-      // weapon switching: 1 = Laser Pistol, 2 = Assault Rifle
+      // weapon switching: G cycles between owned weapons; 1/2 select directly
+      if(inp.pressed('KeyG') && window.PD.weapons.length >= 2){
+        const w = window.PD;
+        const idx = w.weapons.indexOf(w.equippedWeapon);
+        const next = idx >= 0 ? w.weapons[(idx + 1) % w.weapons.length] : w.weapons[0];
+        w.equipWeapon(next);
+      }
       if(inp.pressed('Digit1') && window.PD.hasWeapon('laserpistol')){ window.PD.equipWeapon('laserpistol'); }
       if(inp.pressed('Digit2') && window.PD.hasWeapon('assaultrifle')){ window.PD.equipWeapon('assaultrifle'); }
 
@@ -926,7 +932,9 @@
         ctx.fillStyle = '#5ff0ff';
         ctx.font = 'bold 13px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(w.name + '  DMG ' + w.dmg + '  DELAY ' + w.delay.toFixed(2) + 's', 26, 34);
+        // weapon icon + name + damage + delay
+        const icon = window.PD.equippedWeapon === 'laserpistol' ? '⚬|' : '⚬|=';
+        ctx.fillText(icon + ' ' + w.name + '  DMG ' + w.dmg + '  DELAY ' + w.delay.toFixed(2) + 's', 26, 34);
         ctx.fillStyle = '#ffd479';
         ctx.fillText('ENERGY CELLS ×' + window.PD.energyCells, 26, 52);
         // owned weapons
@@ -937,6 +945,12 @@
           ctx.fillStyle = active ? '#5ff0ff' : '#8fc6d8';
           ctx.fillText((active ? '▶ ' : '  ') + wd.name, ox + 110, 34);
           ox += 100;
+        }
+        // switch hint when both owned
+        if(window.PD.weapons.length >= 2){
+          ctx.fillStyle = '#8fc6d8';
+          ctx.font = '11px sans-serif';
+          ctx.fillText('[G] SWITCH WEAPON', 26, 68);
         }
       }
       // atmosphere tint + vignette
