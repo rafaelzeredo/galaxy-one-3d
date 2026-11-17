@@ -181,6 +181,7 @@
     galaxyOpen: false,
     stationIdx: 0,
     visitN: 0,
+    _pendingJump: null, // { system: idx } awaiting hyperspace confirmation (Stage C)
     openStation(){
       if(this.menuOpenNow) return;
       this.menuOpenNow = true;
@@ -501,14 +502,15 @@
         '<div class="bar-label" style="margin:4px 0 8px;color:#5ff0ff">CURRENT SYSTEM · ' +
         curName + '</div>';
       const S = window.Space;
-      for(const sys of this.GALAXY){
-        const hereSys = sys.sys === curSys;
-        const sh = document.createElement('div');
-        sh.innerHTML = '<div class="bar-label" style="margin:10px 0 6px' +
-          (hereSys ? ';color:#5ff0ff' : '') + '">' + sys.name +
-          (hereSys ? ' ◀ CURRENT' : '') + '</div>';
-        m.appendChild(sh);
-        for(const b of sys.bodies){
+      const hasHD = PD.hasModule('hyperdrive');
+
+      // ---------- CURRENT SYSTEM: local destinations ----------
+      const curHead = document.createElement('div');
+      curHead.innerHTML = '<div class="bar-label" style="margin:10px 0 6px;color:#5ff0ff">' + curName + ' ◀ CURRENT</div>';
+      m.appendChild(curHead);
+      const curGal = this.GALAXY[curSys];
+      if(curGal){
+        for(const b of curGal.bodies){
           const info = this._bodyInfo(b);
           const dist = Math.round(Math.hypot(
             info.pos[0] - S.ship.position.x, info.pos[1] - S.ship.position.y, info.pos[2] - S.ship.position.z));
@@ -523,40 +525,123 @@
             '<div class="price">' + (b.kind === 'station' ? 'DOCK HUB' : 'LANDABLE') + '</div>';
           const btn = document.createElement('button');
           btn.className = 'menu-btn';
-          btn.textContent = 'JUMP';
+          btn.textContent = b.kind === 'station' ? 'DOCK' : 'LAND';
           btn.disabled = here;
           btn.addEventListener('click', () => {
-            let blocked = false;
-            for(const e of S.pirates){
-              if(e.mesh.position.distanceTo(S.ship.position) < 700){ blocked = true; break; }
-            }
-            if(blocked){
-              window.GameAudio.alarm();
-              this.uiToast('✖ JUMP BLOCKED — HOSTILES IN RANGE');
-              return;
-            }
-            const kind = b.kind, idx = b.idx;
-            this.menuClose();
-            this._fade(() => {
-              if(S.jumpTo(kind, idx)){
-                window.GameAudio.warp();
-                this.uiToast('⇢ JUMPED TO ' + this._bodyInfo(b).name);
-              }
-            });
+            if(b.kind === 'station') this.openStation();
+            else this.landOn(b.idx);
           });
           row.appendChild(btn);
           m.appendChild(row);
         }
       }
+
+      // ---------- HYPERSPACE: all systems, current one identified ----------
+      const hypHead = document.createElement('div');
+      hypHead.innerHTML = '<div class="bar-label" style="margin:14px 0 6px;color:#8fc6d8">HYPERSPACE</div>';
+      m.appendChild(hypHead);
+      for(const sys of this.GALAXY){
+        const hereSys = sys.sys === curSys;
+        const sh = document.createElement('div');
+        sh.innerHTML = '<div class="bar-label" style="margin:8px 0 0' +
+          (hereSys ? ';color:#5ff0ff' : '') + '">' + sys.name +
+          (hereSys ? ' ◀ CURRENT' : '') + '</div>';
+        m.appendChild(sh);
+        if(hereSys) continue;
+        const row = document.createElement('div');
+        row.className = 'menu-row';
+        row.innerHTML = '<div class="name">' + sys.name + '<small>' + (hasHD ? 'HYPERDRIVE READY' : 'HYPERDRIVE REQUIRED') + '</small></div>' +
+          '<div class="price">' + (hasHD ? 'JUMP TO SYSTEM' : 'NO JUMP — HYPERDRIVE REQUIRED') + '</div>';
+        if(hasHD){
+          const btn = document.createElement('button');
+          btn.className = 'menu-btn';
+          btn.textContent = 'JUMP TO ' + sys.name;
+          btn.addEventListener('click', () => { this._pendingJump = { system: sys.sys }; this._renderGalaxy(); });
+          row.appendChild(btn);
+        }
+        m.appendChild(row);
+      }
+      if(this._pendingJump){
+        const pj = this._pendingJump;
+        const pRow = document.createElement('div');
+        pRow.className = 'menu-row';
+        pRow.innerHTML = '<div class="name">JUMP TO ' + window.SYSTEMS[pj.system].name + '?</div>' +
+          '<div class="price">CONFIRM HYPERSPACE TRAVEL</div>';
+        const yes = document.createElement('button');
+        yes.className = 'menu-btn';
+        yes.textContent = 'CONFIRM';
+        yes.addEventListener('click', () => this._confirmHyperspace());
+        const no = document.createElement('button');
+        no.className = 'menu-btn';
+        no.textContent = 'CANCEL';
+        no.addEventListener('click', () => { this._pendingJump = null; this._renderGalaxy(); });
+        pRow.appendChild(yes);
+        pRow.appendChild(no);
+        m.appendChild(pRow);
+      }
+
+      // ---------- ACTIVE MISSIONS ----------
+      const misHead = document.createElement('div');
+      misHead.innerHTML = '<div class="bar-label" style="margin:14px 0 6px;color:#c48bff">ACTIVE MISSIONS</div>';
+      m.appendChild(misHead);
+      if(!window.PD.missions.length){
+        const none = document.createElement('div');
+        none.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-bottom:8px';
+        none.textContent = 'No active contracts — accept one from the station lounge.';
+        m.appendChild(none);
+      }
+      for(const mi of window.PD.missions){
+        const prog = mi.type === 'delivery'
+          ? 'carrying ' + Math.min(window.PD.trade[mi.good] | 0, mi.qty) + '/' + mi.qty + ' · reward ' + mi.reward + ' CR'
+          : mi.type === 'passenger' ? 'ferry to ' + mi.dest.name
+          : (mi.have | 0) + '/' + mi.need;
+        const destSys = mi.dest ? window.PD.systemName(window.PD.systemOf(mi.dest.kind, mi.dest.idx)) : '';
+        const row = document.createElement('div');
+        row.className = 'menu-row';
+        row.innerHTML = '<div class="name">' + mi.label + '<small>' + (mi.desc || '') + '</small></div>' +
+          '<div class="price">' + prog + (mi.dest ? ' · → ' + mi.dest.name + ' [' + destSys + ']' : '') + '</div>';
+        m.appendChild(row);
+      }
+
       const d = document.createElement('div');
       d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';
-      d.textContent = 'Direct hyperjumps, no stargates required. Cannot jump with hostiles within 700u.';
+      d.textContent = 'Local jumps need no hyperdrive. Inter-system jumps require the Hyperdrive module and cannot run with hostiles within 700u.';
       m.appendChild(d);
       const close = document.createElement('button');
       close.className = 'menu-btn menu-close';
       close.textContent = 'CLOSE MAP  [TAB]';
       close.addEventListener('click', () => this.menuClose());
       m.appendChild(close);
+    },
+
+    // Stage C: hyperspace confirmation -> start the jump (arrival persists system)
+    _confirmHyperspace(){
+      const pj = this._pendingJump;
+      this._pendingJump = null;
+      if(!pj) return;
+      const si = pj.system | 0;
+      const cur = window.PD.systemIdx | 0;
+      if(si === cur){ this._renderGalaxy(); return; }
+      if(!window.PD.hasModule('hyperdrive')){
+        this.uiToast('✖ HYPERDRIVE REQUIRED — dock at a station to buy the module');
+        this._renderGalaxy();
+        return;
+      }
+      // same combat rule as the quick-travel jump: no hyperspace while hostiles are in range
+      let blocked = false;
+      for(const e of window.Space.pirates){
+        if(e.mesh.position.distanceTo(window.Space.ship.position) < 700){ blocked = true; break; }
+      }
+      if(blocked){
+        window.GameAudio.alarm();
+        this.uiToast('✖ JUMP BLOCKED — HOSTILES IN RANGE');
+        this._renderGalaxy();
+        return;
+      }
+      this.menuClose();
+      window.GameAudio.warp();
+      const ok = window.Space.hyperspaceToSystem(si);
+      if(!ok) this._renderGalaxy();
     },
 
     _renderEquipment(m){

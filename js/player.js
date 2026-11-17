@@ -38,7 +38,8 @@
     retrieval: { name: 'Retrieval Beam',   desc: 'huge ore magnet radius', cost: 280 },
     passenger: { name: 'Passenger Module', desc: 'unlocks ferry missions', cost: 320 },
     emp:       { name: 'EMP Emitter',      desc: 'non-lethal pirate disable [F]', cost: 480 },
-    weapon:    { name: 'Turret Array',     desc: '+6 laser damage',        cost: 520 }
+    weapon:    { name: 'Turret Array',     desc: '+6 laser damage',        cost: 520 },
+    hyperdrive:{ name: 'Hyperdrive',       desc: 'jump to another star system', cost: 800 }
   };
   const MODULE_SLOTS = 3;
   const MODULE_STORE_CAP = 5;

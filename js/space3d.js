@@ -336,6 +336,7 @@
     // Galaxy map direct travel: teleport to the pad of any station/planet.
     jumpTo(kind, idx){
       let pos, name;
+      const prevSys = window.PD.systemIdx;
       if(kind === 'station'){
         const st = this.stations[idx];
         if(!st) return false;
@@ -348,6 +349,7 @@
         window.PD.systemIdx = d.sys;
       }
       window.PD.save();
+      if(window.PD.systemIdx !== prevSys) this.clearTransient(); // Stage B: fresh encounters in the new system
       const dir = this.ship.position.clone().sub(pos);
       if(dir.length() < 1) dir.set(0, 0, 1);
       dir.normalize();
@@ -518,6 +520,56 @@
         quat: this.ship.quaternion.clone(),
         vel: this.vel.clone().multiplyScalar(0.2)
       };
+    },
+
+    // Stage B: leaving a solar system clears its transient combat state
+    // (hostile encounters, live lasers, ore drops, particles, EMP pulses) and
+    // restarts the pirate spawn cycle so the next system gets fresh encounters.
+    clearTransient(){
+      for(const p of this.pirates){ this.scene.remove(p.mesh); }
+      this.pirates.length = 0;
+      for(let i = this.lasers.length - 1; i >= 0; i--){
+        const l = this.lasers[i];
+        this.scene.remove(l.mesh);
+        this.lasers.splice(i, 1);
+      }
+      for(let i = this.oreDrops.length - 1; i >= 0; i--){
+        const o = this.oreDrops[i];
+        this.scene.remove(o.mesh);
+        this.oreDrops.splice(i, 1);
+      }
+      for(let i = this.empPulses.length - 1; i >= 0; i--){
+        const ep = this.empPulses[i];
+        this.scene.remove(ep.mesh);
+        this.empPulses.splice(i, 1);
+      }
+      for(let i = this.parts.length - 1; i >= 0; i--){
+        const p = this.parts[i];
+        this.scene.remove(p.mesh);
+        this.parts.splice(i, 1);
+      }
+      this.pirateTimer = 14;
+    },
+
+    // Stage C: start a hyperspace jump to another system's hub through the
+    // existing warp transition (charge -> run -> arrival pads). The arrival
+    // handler resolves and persists the destination system.
+    hyperspaceToSystem(sysIdx){
+      const si = sysIdx | 0;
+      const sys = window.SYSTEMS[si];
+      if(!sys) return false;
+      const st = this.stations[sys.hub];
+      if(!st) return false;
+      const pos = st.grp.position.clone();
+      const dir = this.ship.position.clone().sub(pos);
+      if(dir.length() < 1) dir.set(0, 0, 1);
+      dir.normalize();
+      this.ship.quaternion.setFromUnitVectors(V3(0, 0, -1), dir);
+      this.warp = { pos: pos.clone(), name: st.def.name, phase: 'charge', t: 0, kind: 'station', idx: sys.hub };
+      this.vel.set(0, 0, 0);
+      window.GameAudio.engine(0.2);
+      window.Game.uiToast('⇢ WARP SPOOLING — ' + st.def.name);
+      return true;
     },
 
     respawn(){
@@ -954,8 +1006,10 @@
           if(distT < 45){ // reached the arrival pad
             this.vel.set(0, 0, 0);
             this.ship.position.copy(this.warp.pos);
+            const prevSys = window.PD.systemIdx;
             window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);
             window.PD.save();
+            if(window.PD.systemIdx !== prevSys) this.clearTransient(); // Stage B: fresh encounters in the new system
             window.Game.uiToast('⇢ ARRIVED — ' + this.warp.name);
             window.GameAudio.pickup();
             this.warp = null;
@@ -1255,6 +1309,8 @@
       }
       for(let i = 0; i < this.planetMeshes.length; i++){
         const d = window.PLANETS[i];
+        // Stage B: scanner + quick travel only see bodies inside the current system
+        if(window.PD.systemOf('planet', i) !== (window.PD.systemIdx | 0)) continue;
         const dist = this.planetMeshes[i].position.distanceTo(this.ship.position);
         v.copy(this.planetMeshes[i].position).project(this.camera);
         if(v.z < 1) out.push({ id: 'pl' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'planet',
@@ -1263,6 +1319,8 @@
       }
       for(let i = 0; i < this.stations.length; i++){
         const st = this.stations[i];
+        // Stage B: scanner + quick travel only see bodies inside the current system
+        if(window.PD.systemOf('station', i) !== (window.PD.systemIdx | 0)) continue;
         const dist = st.grp.position.distanceTo(this.ship.position);
         v.copy(st.grp.position).project(this.camera);
         if(v.z < 1) out.push({ id: 's' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'station',
