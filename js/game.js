@@ -186,7 +186,9 @@
         window.Planet.player.x = st.ship.x;
         window.Planet.player.y = st.ship.y + 40;
         window.Planet.aliens = window.Planet.aliens.filter(a => Math.hypot(a.x - st.ship.x, a.y - st.ship.y) > 600);
-        window.PD.resetShipState();
+        // restore player health to full on emergency evacuation
+        PD.playerHp = PD.playerHpMax();
+        PD.resetShipState();
         window.Planet.hitFlash = 0;
         this.deathHandled = false;
         this.uiToast('EMERGENCY EVAC — you wake up aboard your ship');
@@ -1003,7 +1005,15 @@
           hpTxt.textContent = Math.ceil(PD.playerHp) + '/' + PD.playerHpMax();
           hpBar.style.width = (100 * PD.playerHp / PD.playerHpMax()) + '%';
           const hpLabel = hpTxt.parentElement;
-          if(hpLabel) hpLabel.textContent = 'HEALTH ' + hpTxt.textContent;
+          if(hpLabel){
+            // Update only the label text node, preserving the hp-txt span child
+            for(const child of hpLabel.childNodes){
+              if(child.nodeType === 3){
+                child.textContent = 'HEALTH ';
+                break;
+              }
+            }
+          }
           // hide shield and speed bars in planet mode
           const shLabel = document.getElementById('sh-txt')?.parentElement;
           if(shLabel){ shLabel.style.display = 'none'; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = 'none'; }
@@ -1013,7 +1023,15 @@
           hpTxt.textContent = Math.ceil(window.PD.hp) + '/' + window.PD.hullMax();
           hpBar.style.width = (100 * window.PD.hp / window.PD.hullMax()) + '%';
           const hpLabel = hpTxt.parentElement;
-          if(hpLabel) hpLabel.textContent = 'HULL ' + hpTxt.textContent;
+          if(hpLabel){
+            // Update only the label text node, preserving the hp-txt span child
+            for(const child of hpLabel.childNodes){
+              if(child.nodeType === 3){
+                child.textContent = 'HULL ';
+                break;
+              }
+            }
+          }
           const shLabel = document.getElementById('sh-txt')?.parentElement;
           if(shLabel){ shLabel.style.display = ''; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = ''; }
           const spdLabel = document.getElementById('spd-txt')?.parentElement;

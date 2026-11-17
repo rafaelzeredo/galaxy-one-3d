@@ -27,7 +27,8 @@ function makeDocument(){
       id: '', style: {}, children: [], innerHTML: '', textContent: '', value: '',
       classList: { add(){}, remove(){}, contains(){ return false; } },
       appendChild(child) { this.children.push(child); return child; },
-      addEventListener() {}
+      addEventListener() {},
+      remove(){}
     }; },
     getElementById(){ return { addEventListener() {}, disabled: false, style: {}, parentElement: null, nextElementSibling: null }; },
     addEventListener() {}
@@ -186,3 +187,196 @@ test('repair blocked when insufficient credits', () => {
   assert.notEqual(PD.hp, PD.hullMax(), 'hull not restored');
 });
 
+// ---- Bug 1: Planetary health HUD display ----
+function loadGameWithHUD(seedSave) {
+  const localStorage = makeLocalStorage(seedSave);
+  const document = makeDocument();
+  const window = {
+    localStorage, document, __GALAXY_TEST__: true, addEventListener() {},
+    Math, JSON, Date, Number, String, Array, Object, isFinite, parseInt, parseFloat,
+    performance: { now: () => Date.now() },
+    setTimeout(fn){ fn(); }, clearTimeout(){}
+  };
+  const context = vm.createContext({
+    window, localStorage, document, console,
+    setTimeout(fn){ fn(); }, clearTimeout(){}
+  });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/player.js'), 'utf8'), context, { filename: 'js/player.js' });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/game.js'), 'utf8'), context, { filename: 'js/game.js' });
+  return { window, localStorage, context, document };
+}
+
+test('planetary HUD shows player health (not ship hull)', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.playerHp = 42;
+
+  // Build a mock DOM structure matching index.html:
+  // <div class="bar-label">HULL <span id="hp-txt"></span></div>
+  const hpTxt = { textContent: '100/100', parentElement: null };
+  const hpBar = { style: {} };
+  const hpLabel = {
+    textContent: 'HULL 100/100',
+    childNodes: [{ nodeType: 3, textContent: 'HULL ' }],
+    parentElement: null,
+    appendChild(c) { this.childNodes.push(c); c.parentElement = this; },
+    setAttribute(){}
+  };
+  hpLabel.childNodes.push(hpTxt);
+  hpTxt.parentElement = hpLabel;
+
+  const shLabel = { textContent: 'SHIELD 0/0', style: {}, parentElement: null, nextElementSibling: { style: {} } };
+  const shTxt = { textContent: '', parentElement: shLabel };
+  const shBar = { style: {} };
+  const spdLabel = { textContent: 'SPEED ', style: {}, parentElement: null, nextElementSibling: { style: {} } };
+  const spdTxt = { textContent: '', parentElement: spdLabel };
+  const spdBar = { style: {} };
+  const medkitParent = { style: {}, parentElement: null };
+
+  // Mock Planet for HUD rendering
+  window.Planet = { prompt: '' };
+
+  document.getElementById = (id) => {
+    if(id === 'hp-txt') return hpTxt;
+    if(id === 'hp-bar') return hpBar;
+    if(id === 'sh-txt') return shTxt;
+    if(id === 'spd-txt') return spdTxt;
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: medkitParent };
+    if(id === 'sys-txt') return { textContent: '' };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+
+  Game._renderHudDom();
+
+  assert.equal(hpTxt.textContent, '42/100', 'health text shows playerHp');
+  assert.equal(Math.round(parseFloat(hpBar.style.width)), 42, 'health bar width reflects playerHp');
+  // hpTxt span should still be a child of hpLabel (not destroyed by textContent overwrite)
+  const hasHpTxtChild = hpLabel.childNodes.some(c => c === hpTxt);
+  assert.ok(hasHpTxtChild, 'hpTxt element preserved in DOM (not destroyed by parent textContent overwrite)');
+});
+
+test('space HUD still shows ship hull (not player health)', () => {
+  const { window, document } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'space';
+  Game.prompt = '';
+  Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
+  PD.hp = 30;
+  PD.playerHp = 42;
+  // Mock Space.stats for space mode HUD
+  window.Space = { stats: { speed: 50 } };
+
+  const hpTxt = { textContent: '100/100', parentElement: null };
+  const hpBar = { style: {} };
+  const hpLabel = {
+    textContent: 'HULL 100/100',
+    childNodes: [{ nodeType: 3, textContent: 'HULL ' }],
+    parentElement: null
+  };
+  hpLabel.childNodes.push(hpTxt);
+  hpTxt.parentElement = hpLabel;
+
+  document.getElementById = (id) => {
+    if(id === 'hp-txt') return hpTxt;
+    if(id === 'hp-bar') return hpBar;
+    if(id === 'credits-txt') return { textContent: '' };
+    if(id === 'cargo-lines') return { textContent: '' };
+    if(id === 'cargo-txt') return { textContent: '' };
+    if(id === 'cargo-bar') return { style: {} };
+    if(id === 'medkit-txt') return { innerHTML: '', parentElement: { style: {} } };
+    if(id === 'sys-txt') return { textContent: '' };
+    if(id === 'sh-txt') return { textContent: '', parentElement: { style: {}, parentElement: null, nextElementSibling: { style: {} } } };
+    if(id === 'spd-txt') return { textContent: '', parentElement: { style: {}, parentElement: null, nextElementSibling: { style: {} } } };
+    return { textContent: '', style: {}, parentElement: null, nextElementSibling: null };
+  };
+
+  Game._renderHudDom();
+
+  assert.equal(hpTxt.textContent, '30/' + PD.hullMax(), 'space HUD shows ship hull');
+});
+
+// ---- Bug 2: Emergency evacuation restores player health ----
+test('onPlanetDeath restores playerHp to max after evacuation', () => {
+  const { window } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+
+  // Mock GameAudio
+  window.GameAudio = { bigBoom(){}, hurt(){}, uiBuy(){}, uiClick(){}, land(){}, takeoff(){}, warp(){}, alarm(){}, coin(){}, laser(){}, laserHit(){}, boom(){}, pickup(){}, emp(){}, lock(){}, engine(){}, tone(){}, noise(){}, uiToast(){}, uiBuy(){}, toggleMute(){}, init(){}, resume(){}, mute:false };
+
+  // Mock _fade to execute callback immediately
+  Game._fade = (cb) => cb();
+
+  // Set up els for uiToast
+  Game.els = {
+    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
+  };
+
+  // Simulate player death
+  PD.playerHp = 0;
+  PD.cargo = { ore: 10, wood: 0, crystal: 0, goo: 0 };
+  PD.credits = 500;
+
+  // Mock Planet state
+  window.Planet = {
+    state: { ship: { x: 100, y: 200 } },
+    player: { x: 0, y: 0 },
+    aliens: [],
+    hitFlash: 0
+  };
+
+  Game.onPlanetDeath();
+
+  // After evacuation, player health should be restored
+  assert.equal(PD.playerHp, PD.playerHpMax(), 'player health restored after evacuation');
+  assert.ok(PD.playerHp > 0, 'player is alive after evacuation');
+  assert.equal(Game.deathHandled, false, 'deathHandled flag reset');
+});
+
+test('onPlanetDeath handles repeated deaths correctly', () => {
+  const { window } = loadGameWithHUD();
+  const PD = window.PD;
+  const Game = window.Game;
+  Game.state = 'planet';
+  Game.prompt = '';
+
+  window.GameAudio = { bigBoom(){}, hurt(){}, uiBuy(){}, uiClick(){}, land(){}, takeoff(){}, warp(){}, alarm(){}, coin(){}, laser(){}, laserHit(){}, boom(){}, pickup(){}, emp(){}, lock(){}, engine(){}, tone(){}, noise(){}, uiToast(){}, uiBuy(){}, toggleMute(){}, init(){}, resume(){}, mute:false };
+  Game._fade = (cb) => cb();
+  Game.els = {
+    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
+  };
+
+  // First death
+  PD.playerHp = 0;
+  window.Planet = {
+    state: { ship: { x: 100, y: 200 } },
+    player: { x: 0, y: 0 },
+    aliens: [],
+    hitFlash: 0
+  };
+  Game.onPlanetDeath();
+  assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after first evacuation');
+
+  // Second death - should work independently
+  PD.playerHp = 0;
+  window.Planet = {
+    state: { ship: { x: 300, y: 400 } },
+    player: { x: 0, y: 0 },
+    aliens: [],
+    hitFlash: 0
+  };
+  Game.onPlanetDeath();
+  assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after second evacuation');
+  assert.equal(Game.deathHandled, false, 'deathHandled flag reset after second evacuation');
+});
