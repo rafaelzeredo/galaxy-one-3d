@@ -719,8 +719,12 @@
       if(missingHull > 0){
         const repairCost = Math.ceil(missingHull * 2);
         if(this._pendingRepair){
-          // confirmation dialog
-          this._row(m, 'REPAIR CONFIRMATION', 'restore hull to max · cost ' + repairCost + ' CR', '', '', () => {}, false);
+          // confirmation dialog: plain info row + CONFIRM/CANCEL (no action
+          // button on the info row, so no empty button shell is left behind)
+          const confRow = document.createElement('div');
+          confRow.className = 'menu-row';
+          confRow.innerHTML = '<div class="name">REPAIR CONFIRMATION</div><div class="price">restore hull to max · cost ' + repairCost + ' CR</div>';
+          m.appendChild(confRow);
           const yesBtn = document.createElement('button');
           yesBtn.className = 'menu-btn';
           yesBtn.textContent = 'CONFIRM';
@@ -1318,17 +1322,33 @@
             ['DIST ' + Math.round(hov.dist) + 'm', 'rgba(223,239,255,0.8)'],
             [hov.value || '', 'rgba(255,212,121,0.85)']
           ];
+          // Living world UI: locked enemy target shows hull health (bar + numeric)
+          const healthLocked = !!(S.locked && hov && hov.type === 'pirate');
+          if(healthLocked){
+            lines.push(['HULL ' + Math.ceil(hov.hp || 0) + ' / ' + Math.ceil(hov.maxHp || 0), 'rgba(95,240,255,0.9)']);
+          }
+          const bh = healthLocked ? 64 : 52;
           const bw = Math.max.apply(null, lines.map(l => ctx.measureText(l[0]).width)) + 14;
           ctx.fillStyle = 'rgba(6,16,34,0.72)';
-          ctx.fillRect(px, py, bw, 52);
+          ctx.fillRect(px, py, bw, bh);
           ctx.strokeStyle = 'rgba(95,240,255,0.35)';
           ctx.lineWidth = 1;
-          ctx.strokeRect(px, py, bw, 52);
+          ctx.strokeRect(px, py, bw, bh);
           lines.forEach((l, i) => {
             ctx.fillStyle = l[1];
             ctx.font = (i === 0 ? 'bold ' : '') + (i === 0 ? 11 : 9.5) + 'px "Trebuchet MS", sans-serif';
             ctx.fillText(l[0], px + 7, py + 14 + i * 12);
           });
+          // small hull health bar under the locked enemy info panel
+          if(healthLocked){
+            const hbW = Math.min(bw, 96), hbH = 4;
+            const hy = py + bh - 12;
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.fillRect(px, hy, hbW, hbH);
+            const frac = Math.max(0, Math.min(1, (hov.hp || 0) / Math.max(1, hov.maxHp || 1)));
+            ctx.fillStyle = 'rgba(95,240,255,0.9)';
+            ctx.fillRect(px, hy, hbW * frac, hbH);
+          }
         }
 
         // off-screen pirate warning arrows

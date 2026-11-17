@@ -10,6 +10,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #space3d{z-index:0}#hud2d{z-index:1}
 .hidden{display:none!important}
 
+/* Gameplay pointer: hidden while inside the game viewport during play, returns
+   to the default cursor outside the game elements (browser chrome / page). */
+#space3d, #hud2d, #hud, #crosshair, #menu{ cursor: none; }
+
 /* HUD chrome — Galaxy on Fire style translucent blue panels */
 .panel{position:absolute;background:var(--panel);border:1px solid var(--line);
   border-radius:6px;padding:10px 12px;backdrop-filter:blur(2px)}

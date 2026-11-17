@@ -1357,6 +1357,7 @@
         if(v.z < 1) out.push({ id: 'p' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate',
           name: p.type.name, kind: 'HOSTILE',
           value: 'BOUNTY ' + p.type.bounty[0] + '-' + p.type.bounty[1] + ' CR',
+          hp: p.hp, maxHp: (p.type && p.type.hp) ? p.type.hp[1] : p.hp,
           dist, size: radToSize(5 * p.type.scale, dist) });
       }
       for(let i = 0; i < this.planetMeshes.length; i++){
