@@ -469,7 +469,7 @@
         if(m.x < 0) m.x = WORLD; if(m.x > WORLD) m.x = 0;
         if(m.y < 0) m.y = WORLD; if(m.y > WORLD) m.y = 0;
       }
-      if(!PD.alive){ window.Game.onPlanetDeath(); return; }
+      if(PD.playerHp <= 0){ window.Game.onPlanetDeath(); return; }
     },
 
     _useMedkit(){
@@ -508,7 +508,7 @@
     _hurt(n){
       const PD = window.PD;
       if(this.hitFlash > 0) return;
-      PD.dmg(n);
+      PD.playerDmg(n);
       this.hitFlash = 0.5;
       window.GameAudio.hurt();
       this.hitShake = 8;

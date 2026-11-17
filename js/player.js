@@ -120,10 +120,15 @@
     spaceSaved: null,           // ship pos/quat while landed
     planetIndex: 0,
     systemIdx: 0,               // active star system (index into SYSTEMS)
+    playerHp: 100,              // player health on planetary surface (separate from ship hp)
     alive: true,
 
     hullMax(){ return 60 + this.up.hull * 40; },
     shieldMax(){ return this.up.shield >= 2 ? (this.up.shield - 1) * 35 : 0; },
+    // Player health on planetary surface: fixed at 100, independent of ship
+    // modules and shield regeneration. Alien attacks reduce playerHp, never
+    // ship Hull or Shield.
+    playerHpMax(){ return 100; },
     laserDmg(){ return 8 + this.up.weapon * 6 + (this.installed.indexOf('weapon') >= 0 ? 6 : 0); },
     fireDelay(){ return Math.max(0.09, 0.3 - this.up.weapon * 0.04); },
     thrust(){ return 34 + this.up.engine * 16; },
@@ -214,15 +219,29 @@
         this.alive = false;
       }
     },
+    // Damage the player's health on the surface. Independent of ship Hull,
+    // Shield and modules. Does not affect ship state.
+    playerDmg(n){
+      if(this.playerHp <= 0) return;
+      this.playerHp -= n;
+      if(this.playerHp <= 0){
+        this.playerHp = 0;
+      }
+    },
     healFull(){
       this.hp = this.hullMax();
       this.shield = this.shieldMax();
       this.alive = true;
     },
     useMedkit(){
-      if(this.medkits <= 0 || this.hp >= this.hullMax()) return false;
+      // On the planetary surface, medkits heal player health (not ship Hull).
+      // In space, medkits are not usable (hidden from HUD).
+      const target = window.Game && window.Game.state === 'planet' ? 'playerHp' : 'hp';
+      const max = target === 'playerHp' ? this.playerHpMax() : this.hullMax();
+      const current = this[target];
+      if(this.medkits <= 0 || current >= max) return false;
       this.medkits--;
-      this.hp = Math.min(this.hullMax(), this.hp + 55);
+      this[target] = Math.min(max, current + 55);
       return true;
     },
     resetShipState(){
@@ -237,7 +256,8 @@
           trade: this.trade, up: this.up, installed: this.installed,
           modules: this.modules, missions: this.missions,
           missionsDone: this.missionsDone,
-          systemIdx: this.systemIdx
+          systemIdx: this.systemIdx,
+          playerHp: this.playerHp
         }));
       }catch(e){}
     },
@@ -258,6 +278,7 @@
         // and must continue to load into ORION REACH (index 0).
         const sys = s.systemIdx | 0;
         this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
+        this.playerHp = s.playerHp != null ? s.playerHp : this.playerHpMax();
       }catch(e){}
     },
     // Start a completely fresh game: reset all progression to starting values
@@ -276,6 +297,7 @@
       this.spaceSaved = null;
       this.planetIndex = 0;
       this.systemIdx = 0;
+      this.playerHp = 100;
       // clear per-planet surface state so no harvested nodes or aliens persist
       if(this.surfaceStates){
         for(const k in this.surfaceStates) delete this.surfaceStates[k];
@@ -288,17 +310,6 @@
     // Reports whether a save slot exists on disk.
     hasSave(){
       try{ return localStorage.getItem(SAVE_KEY) != null; }catch(e){ return false; }
-    },
-    save(){
-      try{
-        localStorage.setItem(SAVE_KEY, JSON.stringify({
-          credits: this.credits, medkits: this.medkits, cargo: this.cargo,
-          trade: this.trade, up: this.up, installed: this.installed,
-          modules: this.modules, missions: this.missions,
-          missionsDone: this.missionsDone,
-          systemIdx: this.systemIdx
-        }));
-      }catch(e){}
     }
   };
   P.resetShipState();

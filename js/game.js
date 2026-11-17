@@ -200,6 +200,7 @@
     stationIdx: 0,
     visitN: 0,
     _pendingJump: null, // { system: idx } awaiting hyperspace confirmation (Stage C)
+    _pendingRepair: null, // { cost } awaiting repair confirmation (Step 2)
     openStation(stationIdx){
       if(this.menuOpenNow) return;
       this.menuOpenNow = true;
@@ -683,10 +684,49 @@
     _renderEquipment(m){
       const PD = window.PD;
       // medkit
-      this._row(m, 'Medkit', 'heals 55 hull · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
+      this._row(m, 'Medkit', 'heals 55 player health · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
         if(window.PD.credits < 60) return;
         window.PD.credits -= 60; window.PD.medkits++; window.GameAudio.uiBuy(); window.PD.save(); this._renderStation();
       }, window.PD.credits < 60);
+      // repair ship
+      const missingHull = Math.ceil(PD.hullMax() - PD.hp);
+      if(missingHull > 0){
+        const repairCost = Math.ceil(missingHull * 2);
+        if(this._pendingRepair){
+          // confirmation dialog
+          this._row(m, 'REPAIR CONFIRMATION', 'restore hull to max · cost ' + repairCost + ' CR', '', '', () => {}, false);
+          const yesBtn = document.createElement('button');
+          yesBtn.className = 'menu-btn';
+          yesBtn.textContent = 'CONFIRM';
+          yesBtn.addEventListener('click', () => {
+            if(PD.credits < repairCost){
+              window.GameAudio.alarm();
+              window.Game.uiToast('✖ INSUFFICIENT CREDITS FOR REPAIR');
+            } else {
+              PD.credits -= repairCost;
+              PD.hp = PD.hullMax();
+              window.GameAudio.uiBuy();
+              window.PD.save();
+              this._pendingRepair = null;
+              this._renderStation();
+            }
+          });
+          m.appendChild(yesBtn);
+          const noBtn = document.createElement('button');
+          noBtn.className = 'menu-btn';
+          noBtn.textContent = 'CANCEL';
+          noBtn.addEventListener('click', () => {
+            this._pendingRepair = null;
+            this._renderStation();
+          });
+          m.appendChild(noBtn);
+        } else {
+          this._row(m, 'Repair Ship', 'restore hull to max · missing ' + missingHull, repairCost + ' CR', 'REPAIR', () => {
+            this._pendingRepair = { cost: repairCost };
+            this._renderStation();
+          }, false);
+        }
+      }
       // ship upgrades
       const uh = document.createElement('div');
       uh.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP UPGRADES</div>';
@@ -949,23 +989,62 @@
 
     _renderHudDom(){
       const PD = window.PD;
+      const isPlanet = this.state === 'planet';
       // current star system readout (source of truth: SYSTEMS via PD)
       const sysEl = document.getElementById('sys-txt');
       if(sysEl) sysEl.textContent = '◈ SYSTEM · ' + PD.systemName(PD.systemIdx);
-      document.getElementById('credits-txt').textContent = window.PD.credits;
-      document.getElementById('hp-txt').textContent = Math.ceil(window.PD.hp) + '/' + window.PD.hullMax();
-      document.getElementById('hp-bar').style.width = (100 * window.PD.hp / window.PD.hullMax()) + '%';
-      const sm = window.PD.shieldMax();
-      document.getElementById('sh-txt').textContent = sm ? Math.ceil(window.PD.shield) + '/' + sm : '—';
-      document.getElementById('sh-bar').style.width = sm ? (100 * window.PD.shield / sm) + '%' : '0%';
-      const spd = this.state === 'space' ? window.Space.stats.speed : 0;
-      document.getElementById('spd-txt').textContent = Math.round(spd) + ' u/s';
-      document.getElementById('spd-bar').style.width = (100 * spd / window.PD.maxSpeed()) + '%';
-      document.getElementById('spd-lbl').textContent = this.state === 'space' ? 'SPEED ' : 'PLANET ';
+      const creditsEl = document.getElementById('credits-txt');
+      if(creditsEl) creditsEl.textContent = window.PD.credits;
+      // In planet mode, show player Health instead of ship Hull/Shield/Speed.
+      const hpTxt = document.getElementById('hp-txt');
+      const hpBar = document.getElementById('hp-bar');
+      if(hpTxt && hpBar){
+        if(isPlanet){
+          hpTxt.textContent = Math.ceil(PD.playerHp) + '/' + PD.playerHpMax();
+          hpBar.style.width = (100 * PD.playerHp / PD.playerHpMax()) + '%';
+          const hpLabel = hpTxt.parentElement;
+          if(hpLabel) hpLabel.textContent = 'HEALTH ' + hpTxt.textContent;
+          // hide shield and speed bars in planet mode
+          const shLabel = document.getElementById('sh-txt')?.parentElement;
+          if(shLabel){ shLabel.style.display = 'none'; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = 'none'; }
+          const spdLabel = document.getElementById('spd-txt')?.parentElement;
+          if(spdLabel){ spdLabel.style.display = 'none'; if(spdLabel.nextElementSibling) spdLabel.nextElementSibling.style.display = 'none'; }
+        } else {
+          hpTxt.textContent = Math.ceil(window.PD.hp) + '/' + window.PD.hullMax();
+          hpBar.style.width = (100 * window.PD.hp / window.PD.hullMax()) + '%';
+          const hpLabel = hpTxt.parentElement;
+          if(hpLabel) hpLabel.textContent = 'HULL ' + hpTxt.textContent;
+          const shLabel = document.getElementById('sh-txt')?.parentElement;
+          if(shLabel){ shLabel.style.display = ''; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = ''; }
+          const spdLabel = document.getElementById('spd-txt')?.parentElement;
+          if(spdLabel){ spdLabel.style.display = ''; if(spdLabel.nextElementSibling) spdLabel.nextElementSibling.style.display = ''; }
+          const sm = window.PD.shieldMax();
+          const shTxt = document.getElementById('sh-txt');
+          const shBar = document.getElementById('sh-bar');
+          if(shTxt) shTxt.textContent = sm ? Math.ceil(window.PD.shield) + '/' + sm : '—';
+          if(shBar) shBar.style.width = sm ? (100 * window.PD.shield / sm) + '%' : '0%';
+          const spd = this.state === 'space' ? window.Space.stats.speed : 0;
+          const spdTxt = document.getElementById('spd-txt');
+          const spdBar = document.getElementById('spd-bar');
+          const spdLbl = document.getElementById('spd-lbl');
+          if(spdTxt) spdTxt.textContent = Math.round(spd) + ' u/s';
+          if(spdBar) spdBar.style.width = (100 * spd / window.PD.maxSpeed()) + '%';
+          if(spdLbl) spdLbl.textContent = this.state === 'space' ? 'SPEED ' : 'PLANET ';
+        }
+      }
       document.getElementById('cargo-lines').textContent = this._fmtCargo();
       document.getElementById('cargo-txt').textContent = window.PD.cargoUsed() + '/' + window.PD.cargoMax();
       document.getElementById('cargo-bar').style.width = (100 * window.PD.cargoUsed() / window.PD.cargoMax()) + '%';
-      document.getElementById('medkit-txt').innerHTML = 'MEDKIT ×' + window.PD.medkits + ' <span class="key">[H]</span>';
+      // medkit count only visible in planetary mode
+      const medkitEl = document.getElementById('medkit-txt');
+      if(medkitEl){
+        if(isPlanet){
+          medkitEl.innerHTML = 'MEDKIT ×' + window.PD.medkits + ' <span class="key">[H]</span>';
+          if(medkitEl.parentElement) medkitEl.parentElement.style.display = '';
+        } else {
+          if(medkitEl.parentElement) medkitEl.parentElement.style.display = 'none';
+        }
+      }
 
       // prompt line
       let prompt = '';
