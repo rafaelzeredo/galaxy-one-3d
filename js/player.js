@@ -45,8 +45,10 @@
   // Planetary ranged weapons: purchased once, then usable on planetary surfaces
   // when Energy Cells are available. Each shot consumes one Energy Cell.
   const WEAPON_DEFS = {
-    laserpistol: { name: 'Laser Pistol',  desc: 'controlled, slower firing', dmg: 10, delay: 0.50, cost: 250 },
-    assaultrifle:{ name: 'Assault Rifle', desc: 'faster firing',            dmg:  6, delay: 0.20, cost: 400 }
+    laserpistol: { name: 'Laser Pistol',  desc: 'controlled, slower firing', dmg: 10, delay: 0.50, cost: 250,
+      baseSpread: 0.020, recoilPerShot: 0.10, maxRecoil: 0.30, recoilRecovery: 0.60, range: 400 },
+    assaultrifle:{ name: 'Assault Rifle', desc: 'faster firing',            dmg:  6, delay: 0.20, cost: 400,
+      baseSpread: 0.008, recoilPerShot: 0.035, maxRecoil: 0.25, recoilRecovery: 0.50, range: 600 }
   };
   const MODULE_SLOTS = 3;
   const MODULE_STORE_CAP = 5;

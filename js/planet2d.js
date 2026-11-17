@@ -3,6 +3,9 @@
   // 2D top-down planet mode: Mini DayZ-style survival, harvesting, aliens.
   const WORLD = 2400;
 
+  // Aiming spread (radians) applied when the player is running.
+  const MOVEMENT_SPREAD = 0.06;
+
   function mulberry32(a){
     return function(){
       a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -32,6 +35,7 @@
     prompt: '', promptTarget: null,
     hitFlash: 0,
     fx: [], walkT: 0, moving: false, fireFlash: 0,
+    recoil: 0,          // current weapon recoil (0 = fully recovered)
     enterFlash: 0, cloudShadows: [], motes: [],
 
     init(ctx){ this.ctx = ctx; },
@@ -273,18 +277,30 @@
 
       // shoot
       this.fireT -= dt;
+      const w = WEAPON_DEFS[window.PD.equippedWeapon];
+      if(w){
+        // Recoil gradually recovers over time, even while running or not firing
+        this.recoil = Math.max(0, this.recoil - dt * w.recoilRecovery);
+      }
       if(shooting && this.fireT <= 0){
-        const w = WEAPON_DEFS[window.PD.equippedWeapon];
         if(w && window.PD.energyCells > 0){
           this.fireT = w.delay;
           window.PD.energyCells--;
           this.fireFlash = 0.08;
+          // Add recoil from this shot, capped at max
+          this.recoil = Math.min(w.maxRecoil, this.recoil + w.recoilPerShot);
+          // Total aiming spread = weapon baseline + movement penalty + recoil
+          const moveSpread = this.moving ? MOVEMENT_SPREAD : 0;
+          const totalSpread = w.baseSpread + moveSpread + this.recoil;
+          // Apply random angular spread to the aim direction
+          const spreadAngle = (Math.random() - 0.5) * 2 * totalSpread;
+          const shotAim = p.aim + spreadAngle;
           this.bullets.push({
-            x: p.x + Math.cos(p.aim) * 14, y: p.y + Math.sin(p.aim) * 14,
-            vx: Math.cos(p.aim) * 420, vy: Math.sin(p.aim) * 420, life: 0.9, friendly: true,
-            dmg: w.dmg
+            x: p.x + Math.cos(shotAim) * 14, y: p.y + Math.sin(shotAim) * 14,
+            vx: Math.cos(shotAim) * 420, vy: Math.sin(shotAim) * 420,
+            life: w.range / 420, friendly: true, dmg: w.dmg
           });
-          this._spawnFx(p.x + Math.cos(p.aim) * 18, p.y + Math.sin(p.aim) * 18, '#aef2ff', 2, 60, 1.6, true, 0.25);
+          this._spawnFx(p.x + Math.cos(shotAim) * 18, p.y + Math.sin(shotAim) * 18, '#aef2ff', 2, 60, 1.6, true, 0.25);
           window.GameAudio.shoot2d();
         }
       }

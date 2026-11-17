@@ -215,15 +215,13 @@ test('planetary HUD shows player health (not ship hull)', () => {
   Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
   PD.playerHp = 42;
 
-  // Build a mock DOM structure matching index.html:
-  // <div class="bar-label">HULL <span id="hp-txt"></span></div>
   const hpTxt = { textContent: '100/100', parentElement: null };
   const hpBar = { style: {} };
   const hpLabel = {
     textContent: 'HULL 100/100',
     childNodes: [{ nodeType: 3, textContent: 'HULL ' }],
     parentElement: null,
-    appendChild(c) { this.childNodes.push(c); c.parentElement = this; },
+    appendChild(c) { this.children.push(c); c.parentElement = this; },
     setAttribute(){}
   };
   hpLabel.childNodes.push(hpTxt);
@@ -237,7 +235,6 @@ test('planetary HUD shows player health (not ship hull)', () => {
   const spdBar = { style: {} };
   const medkitParent = { style: {}, parentElement: null };
 
-  // Mock Planet for HUD rendering
   window.Planet = { prompt: '' };
 
   document.getElementById = (id) => {
@@ -258,7 +255,6 @@ test('planetary HUD shows player health (not ship hull)', () => {
 
   assert.equal(hpTxt.textContent, '42/100', 'health text shows playerHp');
   assert.equal(Math.round(parseFloat(hpBar.style.width)), 42, 'health bar width reflects playerHp');
-  // hpTxt span should still be a child of hpLabel (not destroyed by textContent overwrite)
   const hasHpTxtChild = hpLabel.childNodes.some(c => c === hpTxt);
   assert.ok(hasHpTxtChild, 'hpTxt element preserved in DOM (not destroyed by parent textContent overwrite)');
 });
@@ -272,7 +268,6 @@ test('space HUD still shows ship hull (not player health)', () => {
   Game.els = { prompt: { innerHTML: '', classList: { remove(){}, add(){}, contains(){} } } };
   PD.hp = 30;
   PD.playerHp = 42;
-  // Mock Space.stats for space mode HUD
   window.Space = { stats: { speed: 50 } };
 
   const hpTxt = { textContent: '100/100', parentElement: null };
@@ -312,23 +307,16 @@ test('onPlanetDeath restores playerHp to max after evacuation', () => {
   Game.state = 'planet';
   Game.prompt = '';
 
-  // Mock GameAudio
   window.GameAudio = { bigBoom(){}, hurt(){}, uiBuy(){}, uiClick(){}, land(){}, takeoff(){}, warp(){}, alarm(){}, coin(){}, laser(){}, laserHit(){}, boom(){}, pickup(){}, emp(){}, lock(){}, engine(){}, tone(){}, noise(){}, uiToast(){}, uiBuy(){}, toggleMute(){}, init(){}, resume(){}, mute:false };
-
-  // Mock _fade to execute callback immediately
   Game._fade = (cb) => cb();
-
-  // Set up els for uiToast
   Game.els = {
     toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
   };
 
-  // Simulate player death
   PD.playerHp = 0;
   PD.cargo = { ore: 10, wood: 0, crystal: 0, goo: 0 };
   PD.credits = 500;
 
-  // Mock Planet state
   window.Planet = {
     state: { ship: { x: 100, y: 200 } },
     player: { x: 0, y: 0 },
@@ -338,7 +326,6 @@ test('onPlanetDeath restores playerHp to max after evacuation', () => {
 
   Game.onPlanetDeath();
 
-  // After evacuation, player health should be restored
   assert.equal(PD.playerHp, PD.playerHpMax(), 'player health restored after evacuation');
   assert.ok(PD.playerHp > 0, 'player is alive after evacuation');
   assert.equal(Game.deathHandled, false, 'deathHandled flag reset');
@@ -357,7 +344,6 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
     toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
   };
 
-  // First death
   PD.playerHp = 0;
   window.Planet = {
     state: { ship: { x: 100, y: 200 } },
@@ -368,7 +354,6 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
   Game.onPlanetDeath();
   assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after first evacuation');
 
-  // Second death - should work independently
   PD.playerHp = 0;
   window.Planet = {
     state: { ship: { x: 300, y: 400 } },
@@ -455,7 +440,6 @@ test('WEAPON_DEFS has correct values', () => {
 test('market stock persists between openings', () => {
   const { window } = loadPlayer();
   const PD = window.PD;
-  // Simulate _marketStock being called twice for same market
   PD.marketStock = {};
   PD.marketStock['station'] = { energyCells: 7, weapons: { laserpistol: 1 } };
   const stock1 = PD.marketStock['station'];
@@ -472,11 +456,9 @@ test('energy cells consumed on shoot', () => {
   PD.energyCells = 3;
   PD.weapons = ['laserpistol'];
 
-  // Simulate one shot consuming 1 cell
   PD.energyCells--;
   assert.equal(PD.energyCells, 2);
 
-  // Simulate shooting until empty
   while(PD.energyCells > 0) PD.energyCells--;
   assert.equal(PD.energyCells, 0);
   assert.ok(PD.energyCells <= 0, 'no ammo left');
@@ -573,12 +555,10 @@ test('G key switches between owned weapons', () => {
   const PD = window.PD;
   PD.weapons = ['laserpistol', 'assaultrifle'];
   PD.equippedWeapon = 'laserpistol';
-  // Simulate pressing G once
   const idx = PD.weapons.indexOf(PD.equippedWeapon);
   const next = PD.weapons[(idx + 1) % PD.weapons.length];
   PD.equipWeapon(next);
   assert.equal(PD.equippedWeapon, 'assaultrifle', 'switched to assault rifle');
-  // Press G again
   const idx2 = PD.weapons.indexOf(PD.equippedWeapon);
   const next2 = PD.weapons[(idx2 + 1) % PD.weapons.length];
   PD.equipWeapon(next2);
@@ -592,7 +572,6 @@ test('G key switching does not consume energy cells', () => {
   PD.equippedWeapon = 'laserpistol';
   PD.energyCells = 5;
   const before = PD.energyCells;
-  // Switch twice
   PD.equipWeapon('assaultrifle');
   PD.equipWeapon('laserpistol');
   assert.equal(PD.energyCells, before, 'energy cells unchanged after switching');
@@ -603,7 +582,6 @@ test('single weapon remains selected without G switch needed', () => {
   const PD = window.PD;
   PD.weapons = ['laserpistol'];
   PD.equippedWeapon = 'laserpistol';
-  // Only one weapon - equipping it again keeps it
   PD.equipWeapon('laserpistol');
   assert.equal(PD.equippedWeapon, 'laserpistol');
   assert.equal(PD.weapons.length, 1);
@@ -617,7 +595,6 @@ test('melee remains available after selling last weapon', () => {
   PD.sellWeapon('laserpistol');
   assert.equal(PD.equippedWeapon, null, 'no weapon equipped');
   assert.equal(PD.weaponDmg(), 0, 'no weapon damage');
-  // playerHp-based melee is independent - still works
   PD.playerHp = 100;
   PD.playerDmg(10);
   assert.equal(PD.playerHp, 90, 'player can still take melee damage');
@@ -743,4 +720,143 @@ test('weapon HUD hides G switch hint when only one weapon owned', () => {
   };
   Game._renderHudDom();
   assert.ok(!wepEl.innerHTML.includes('[G] switch'), 'hides G switch hint with one weapon');
+});
+
+// ---- Step 3B: Planetary combat accuracy, movement, recoil, weapon firing ----
+
+function loadPlanet(seedSave) {
+  const localStorage = makeLocalStorage(seedSave);
+  const document = makeDocument();
+  const window = {
+    localStorage, document, __GALAXY_TEST__: true, addEventListener() {},
+    Math, JSON, Date, Number, String, Array, Object, isFinite, parseInt, parseFloat,
+    performance: { now: () => Date.now() },
+    setTimeout(fn){ fn(); }, clearTimeout(){}
+  };
+  const context = vm.createContext({
+    window, localStorage, document, console,
+    setTimeout(fn){ fn(); }, clearTimeout(){}
+  });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/player.js'), 'utf8'), context, { filename: 'js/player.js' });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/planet2d.js'), 'utf8'), context, { filename: 'js/planet2d.js' });
+  return { window, localStorage, context, document };
+}
+
+test('WEAPON_DEFS has accuracy, recoil, and range values', () => {
+  const { window } = loadPlayer();
+  const wd = window.WEAPON_DEFS;
+  assert.ok(wd.laserpistol.recoilPerShot > wd.assaultrifle.recoilPerShot,
+    'laserpistol has higher recoil per shot than assaultrifle');
+  assert.ok(wd.laserpistol.delay > wd.assaultrifle.delay,
+    'laserpistol has slower firing rate than assaultrifle');
+  assert.ok(wd.laserpistol.range < wd.assaultrifle.range,
+    'laserpistol has shorter range than assaultrifle');
+  assert.ok(wd.laserpistol.baseSpread > wd.assaultrifle.baseSpread,
+    'laserpistol has worse baseline accuracy than assaultrifle');
+  assert.ok(wd.laserpistol.maxRecoil > 0, 'laserpistol has maxRecoil defined');
+  assert.ok(wd.assaultrifle.maxRecoil > 0, 'assaultrifle has maxRecoil defined');
+  assert.ok(wd.laserpistol.recoilRecovery > 0, 'laserpistol has recoilRecovery defined');
+  assert.ok(wd.assaultrifle.recoilRecovery > 0, 'assaultrifle has recoilRecovery defined');
+});
+
+test('recoil accumulates per shot and is capped at maxRecoil', () => {
+  const { window } = loadPlanet();
+  const PD = window.PD;
+  const PL = window.Planet;
+  PL.init({ width: 800, height: 600, getContext(){ return {}; } });
+  PD.equippedWeapon = 'laserpistol';
+  PD.weapons = ['laserpistol'];
+  PD.energyCells = 100;
+
+  let recoil = 0;
+  const w = window.WEAPON_DEFS.laserpistol;
+  for(let i = 0; i < 10; i++) {
+    recoil = Math.min(w.maxRecoil, recoil + w.recoilPerShot);
+  }
+  assert.ok(recoil > 0, 'recoil accumulates with shots');
+  assert.ok(recoil <= w.maxRecoil, 'recoil capped at maxRecoil');
+  assert.ok(recoil === w.maxRecoil, 'recoil reaches max after enough shots');
+});
+
+test('recoil recovers over time when not firing', () => {
+  const { window } = loadPlanet();
+  const PD = window.PD;
+  const PL = window.Planet;
+  PL.init({ width: 800, height: 600, getContext(){ return {}; } });
+  PD.equippedWeapon = 'laserpistol';
+  PD.weapons = ['laserpistol'];
+  PD.energyCells = 100;
+  const w = window.WEAPON_DEFS.laserpistol;
+
+  let recoil = w.maxRecoil;
+  for(let i = 0; i < 100; i++) {
+    recoil = Math.max(0, recoil - 0.1 * w.recoilRecovery);
+  }
+  assert.ok(recoil < w.maxRecoil, 'recoil recovers over time');
+  assert.ok(recoil >= 0, 'recoil never goes negative');
+});
+
+test('recoil recovers even while moving', () => {
+  const { window } = loadPlanet();
+  const PD = window.PD;
+  const PL = window.Planet;
+  PL.init({ width: 800, height: 600, getContext(){ return {}; } });
+  PD.equippedWeapon = 'laserpistol';
+  PD.weapons = ['laserpistol'];
+  PD.energyCells = 100;
+  const w = window.WEAPON_DEFS.laserpistol;
+
+  PL.moving = true;
+  let recoil = w.maxRecoil;
+  for(let i = 0; i < 100; i++) {
+    recoil = Math.max(0, recoil - 0.1 * w.recoilRecovery);
+  }
+  assert.ok(recoil < w.maxRecoil, 'recoil recovers while moving');
+});
+
+test('movement spread adds to total spread when running', () => {
+  const { window } = loadPlanet();
+  const PD = window.PD;
+  const w = window.WEAPON_DEFS.laserpistol;
+  const MOVEMENT_SPREAD = 0.06;
+
+  const standingSpread = w.baseSpread + 0;
+  const runningSpread = w.baseSpread + MOVEMENT_SPREAD;
+  assert.ok(runningSpread > standingSpread, 'running has higher spread than standing');
+});
+
+test('both weapons have bounded max recoil and full recovery', () => {
+  const { window } = loadPlayer();
+  const lp = window.WEAPON_DEFS.laserpistol;
+  const ar = window.WEAPON_DEFS.assaultrifle;
+  assert.ok(lp.maxRecoil > 0 && lp.maxRecoil < 1, 'laserpistol has bounded max recoil');
+  assert.ok(ar.maxRecoil > 0 && ar.maxRecoil < 1, 'assaultrifle has bounded max recoil');
+  assert.ok(lp.recoilRecovery > 0, 'laserpistol has recoil recovery rate');
+  assert.ok(ar.recoilRecovery > 0, 'assaultrifle has recoil recovery rate');
+
+  let recoil = lp.maxRecoil;
+  for(let i = 0; i < 10000; i++){ recoil = Math.max(0, recoil - 0.1 * lp.recoilRecovery); }
+  assert.equal(recoil, 0, 'laserpistol recoil fully recovers over time');
+
+  recoil = ar.maxRecoil;
+  for(let i = 0; i < 10000; i++){ recoil = Math.max(0, recoil - 0.1 * ar.recoilRecovery); }
+  assert.equal(recoil, 0, 'assaultrifle recoil fully recovers over time');
+});
+
+test('laserpistol vs assaultrifle weapon characteristics', () => {
+  const { window } = loadPlayer();
+  const lp = window.WEAPON_DEFS.laserpistol;
+  const ar = window.WEAPON_DEFS.assaultrifle;
+
+  // Laser Pistol: slower firing, higher recoil per shot, shorter range, slightly worse baseline accuracy
+  assert.ok(lp.delay > ar.delay, 'laserpistol has slower firing rate');
+  assert.ok(lp.recoilPerShot > ar.recoilPerShot, 'laserpistol has higher recoil per shot');
+  assert.ok(lp.range < ar.range, 'laserpistol has shorter effective range');
+  assert.ok(lp.baseSpread > ar.baseSpread, 'laserpistol has worse baseline accuracy');
+
+  // Assault Rifle: faster firing, lower recoil per shot, longer range, better baseline accuracy
+  assert.ok(ar.delay < lp.delay, 'assaultrifle has faster firing rate');
+  assert.ok(ar.recoilPerShot < lp.recoilPerShot, 'assaultrifle has lower recoil per shot');
+  assert.ok(ar.range > lp.range, 'assaultrifle has longer effective range');
+  assert.ok(ar.baseSpread < lp.baseSpread, 'assaultrifle has better baseline accuracy');
 });
