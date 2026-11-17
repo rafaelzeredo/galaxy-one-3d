@@ -921,21 +921,34 @@
 
     // Stage 1: solar-system isolation — only bodies belonging to the player's
     // current system exist in the active world. Non-current planets/stations are
-    // hidden, stop being interaction/scan/navigation targets and cannot be landed
-    // on or docked with. Local gameplay inside the current system is untouched.
+    // physically removed from the scene, so they cannot be seen, flown into,
+    // targeted or collided with. Local gameplay inside the current system is
+    // untouched.
     syncWorld(){
       const cur = window.PD.systemIdx | 0;
       const sts = this.stations || [];
       for(let i = 0; i < sts.length; i++){
         const st = sts[i];
         if(!st) continue;
-        st.grp.visible = window.PD.systemOf('station', i) === cur;
+        const local = window.PD.systemOf('station', i) === cur;
+        if(local && st.grp.parent !== this.scene){
+          this.scene.add(st.grp);
+        } else if(!local && st.grp.parent === this.scene){
+          this.scene.remove(st.grp);
+        }
+        st.grp.visible = local;
       }
       const pms = this.planetMeshes || [];
       for(let i = 0; i < pms.length; i++){
         const pm = pms[i];
         if(!pm) continue;
-        pm.visible = window.PD.systemOf('planet', i) === cur;
+        const local = window.PD.systemOf('planet', i) === cur;
+        if(local && pm.parent !== this.scene){
+          this.scene.add(pm);
+        } else if(!local && pm.parent === this.scene){
+          this.scene.remove(pm);
+        }
+        pm.visible = local;
       }
     },
 

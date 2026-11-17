@@ -201,10 +201,11 @@ test('solar-system isolation: only the current system active in the 3D world is 
   const PD = window.PD;
   const S = window.Space;
   // seed the world bodies the way Space.init would (indices align with SYSTEMS)
+  S.scene = { children: [], add(o){ this.children.push(o); }, remove(o){ const i=this.children.indexOf(o); if(i>=0) this.children.splice(i,1); } };
   S.stations = [];
-  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true }, def: window.STATIONS[i] });
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true, parent: null }, def: window.STATIONS[i] });
   S.planetMeshes = [];
-  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true });
+  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true, parent: null });
 
   for(const si of [0, 1, 2]){
     PD.systemIdx = si;
@@ -213,8 +214,11 @@ test('solar-system isolation: only the current system active in the 3D world is 
     assert.equal(S.stations[si].grp.visible, true, 'system ' + si + ' hub visible');
     assert.equal(S.planetMeshes[2 * si].visible, true, 'system ' + si + ' planet A visible');
     assert.equal(S.planetMeshes[2 * si + 1].visible, true, 'system ' + si + ' planet B visible');
-    // every other system is fully hidden
-    for(let i = 0; i < S.stations.length; i++) if(i !== si) assert.equal(S.stations[i].grp.visible, false, 'system ' + si + ' hides station ' + i);
+    // every other system is fully removed from the active world
+    for(let i = 0; i < S.stations.length; i++){
+      const st = S.stations[i];
+      assert.equal(st.grp.visible, i === si, 'system ' + si + ' station ' + i + ' visibility');
+    }
     for(let pi = 0; pi < S.planetMeshes.length; pi++){
       const pSys = Math.floor(pi / 2);
       assert.equal(S.planetMeshes[pi].visible, pSys === si, 'system ' + si + ' planet visibility ' + pi);
@@ -226,10 +230,11 @@ test('solar-system isolation: arriving in a destination system hides the previou
   const { window } = makeContext();
   const PD = window.PD;
   const S = window.Space;
+  S.scene = { children: [], add(o){ this.children.push(o); }, remove(o){ const i=this.children.indexOf(o); if(i>=0) this.children.splice(i,1); } };
   S.stations = [];
-  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true }, def: window.STATIONS[i] });
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true, parent: null }, def: window.STATIONS[i] });
   S.planetMeshes = [];
-  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true });
+  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true, parent: null });
 
   // player travels ORION REACH -> NOVARA SPUR via hyperspace arrival
   PD.systemIdx = 0;
