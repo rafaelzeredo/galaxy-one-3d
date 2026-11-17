@@ -349,7 +349,8 @@
         window.PD.systemIdx = d.sys;
       }
       window.PD.save();
-      if(window.PD.systemIdx !== prevSys) this.clearTransient(); // Stage B: fresh encounters in the new system
+      if(window.PD.systemIdx !== prevSys){ this.clearTransient(); this.resetAsteroids(); } // Stage B+C: fresh encounters + local mining debris in the new system
+      this.syncWorld(); // Stage 1: hide bodies of systems other than the new current one
       const dir = this.ship.position.clone().sub(pos);
       if(dir.length() < 1) dir.set(0, 0, 1);
       dir.normalize();
@@ -580,6 +581,8 @@
       this.pirates.length = 0;
       window.PD.systemIdx = 0; // rebuilt at ORION STATION
       window.PD.save();
+      this.syncWorld(); // Stage 1: ORION REACH is the only active system after respawn
+      this.resetAsteroids(); // Stage 1: respawn asteroid field belongs to ORION REACH
       window.PD.resetShipState();
     },
 
@@ -909,6 +912,33 @@
       return this.asteroids;
     },
 
+    // Stage 1: rebuild the ambient asteroid field around the current system's hub
+    // so mining debris belongs to the active solar system.
+    resetAsteroids(){
+      this.asteroids = [];
+      this.buildAsteroids();
+    },
+
+    // Stage 1: solar-system isolation — only bodies belonging to the player's
+    // current system exist in the active world. Non-current planets/stations are
+    // hidden, stop being interaction/scan/navigation targets and cannot be landed
+    // on or docked with. Local gameplay inside the current system is untouched.
+    syncWorld(){
+      const cur = window.PD.systemIdx | 0;
+      const sts = this.stations || [];
+      for(let i = 0; i < sts.length; i++){
+        const st = sts[i];
+        if(!st) continue;
+        st.grp.visible = window.PD.systemOf('station', i) === cur;
+      }
+      const pms = this.planetMeshes || [];
+      for(let i = 0; i < pms.length; i++){
+        const pm = pms[i];
+        if(!pm) continue;
+        pm.visible = window.PD.systemOf('planet', i) === cur;
+      }
+    },
+
     update(dt){
       if(!this.active) return;
       const G = window.Game, PD = window.PD;
@@ -1009,7 +1039,8 @@
             const prevSys = window.PD.systemIdx;
             window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);
             window.PD.save();
-            if(window.PD.systemIdx !== prevSys) this.clearTransient(); // Stage B: fresh encounters in the new system
+            if(window.PD.systemIdx !== prevSys){ this.clearTransient(); this.resetAsteroids(); } // Stage B+C: fresh encounters + local mining debris in the new system
+            this.syncWorld(); // Stage 1: hide bodies of systems other than the new current one
             window.Game.uiToast('⇢ ARRIVED — ' + this.warp.name);
             window.GameAudio.pickup();
             this.warp = null;
@@ -1240,6 +1271,8 @@
       const defs = window.PLANETS;
       for(let i = 0; i < this.planetMeshes.length; i++){
         const d = defs[i];
+        // Stage 1: only bodies of the current system can be landed on
+        if(window.PD.systemOf('planet', i) !== (window.PD.systemIdx | 0)) continue;
         if(this.ship.position.distanceTo(this.planetMeshes[i].position) < d.size + 70){
           this.nearPlanet = i;
           this.landPrompt = 'Press <b>E</b> to land on <b>' + d.name + '</b> — ' + d.desc;
@@ -1248,6 +1281,8 @@
       }
       if(this.nearPlanet < 0){
         for(let i = 0; i < this.stations.length; i++){
+          // Stage 1: only bodies of the current system can be docked with
+          if(window.PD.systemOf('station', i) !== (window.PD.systemIdx | 0)) continue;
           if(this.ship.position.distanceTo(this.stations[i].grp.position) < 160){
             this.nearStation = true;
             this.nearStationIdx = i;
@@ -1340,14 +1375,21 @@
       new THREE.MeshStandardMaterial({ map: tex,
         color: new THREE.Color().setHSL(0.6 + Math.random() * 0.06, 0.1, l),
         roughness: 0.95, metalness: 0.15 }));
+    // Stage 1: ambient mining debris lives inside the current system's play volume
+    const cur = window.PD.systemIdx | 0;
+    const sys = (window.SYSTEMS && window.SYSTEMS[cur]) || window.SYSTEMS[0];
+    const hubIdx = sys ? (sys.hub || 0) : 0;
+    const c = (window.STATIONS && window.STATIONS[hubIdx] && window.STATIONS[hubIdx].pos) || [0, 0, 0];
     for(let i = 0; i < 70; i++){
       const r = 8 + Math.random() * 14;
       const mesh = new THREE.Mesh(
         new THREE.DodecahedronGeometry(r, 1),
         astMats[i & 3]
       );
-      mesh.position.set((Math.random() - 0.5) * 3000, (Math.random() - 0.5) * 1400, (Math.random() - 0.5) * 3000);
-      if(mesh.position.length() < 300) mesh.position.multiplyScalar(2.2);
+      mesh.position.set(c[0] + (Math.random() - 0.5) * 1400,
+                         c[1] + (Math.random() - 0.5) * 900,
+                         c[2] + (Math.random() - 0.5) * 1400);
+      if(mesh.position.length() < 120) mesh.position.multiplyScalar(2.2);
       mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       // slight non-uniform scale so they read as irregular rocks, not perfect polyhedra
       mesh.scale.set(0.85 + Math.random() * 0.3, 0.85 + Math.random() * 0.3, 0.85 + Math.random() * 0.3);

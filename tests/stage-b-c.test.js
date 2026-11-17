@@ -196,6 +196,58 @@ test('TAB pause: gameplay updates paused while open, resume after close', () => 
   window.Space.update = origUpdate;
 });
 
+test('solar-system isolation: only the current system active in the 3D world is visible', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  // seed the world bodies the way Space.init would (indices align with SYSTEMS)
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true }, def: window.STATIONS[i] });
+  S.planetMeshes = [];
+  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true });
+
+  for(const si of [0, 1, 2]){
+    PD.systemIdx = si;
+    S.syncWorld();
+    // current system's hub station + planets are active
+    assert.equal(S.stations[si].grp.visible, true, 'system ' + si + ' hub visible');
+    assert.equal(S.planetMeshes[2 * si].visible, true, 'system ' + si + ' planet A visible');
+    assert.equal(S.planetMeshes[2 * si + 1].visible, true, 'system ' + si + ' planet B visible');
+    // every other system is fully hidden
+    for(let i = 0; i < S.stations.length; i++) if(i !== si) assert.equal(S.stations[i].grp.visible, false, 'system ' + si + ' hides station ' + i);
+    for(let pi = 0; pi < S.planetMeshes.length; pi++){
+      const pSys = Math.floor(pi / 2);
+      assert.equal(S.planetMeshes[pi].visible, pSys === si, 'system ' + si + ' planet visibility ' + pi);
+    }
+  }
+});
+
+test('solar-system isolation: arriving in a destination system hides the previous one', () => {
+  const { window } = makeContext();
+  const PD = window.PD;
+  const S = window.Space;
+  S.stations = [];
+  for(let i = 0; i < window.STATIONS.length; i++) S.stations.push({ grp: { visible: true }, def: window.STATIONS[i] });
+  S.planetMeshes = [];
+  for(let i = 0; i < window.PLANETS.length; i++) S.planetMeshes.push({ visible: true });
+
+  // player travels ORION REACH -> NOVARA SPUR via hyperspace arrival
+  PD.systemIdx = 0;
+  S.syncWorld();
+  assert.equal(S.stations[0].grp.visible, true);
+  assert.equal(S.planetMeshes[0].visible, true);
+  assert.equal(S.planetMeshes[1].visible, true);
+
+  PD.systemIdx = 2; // hyperspace arrival resolves the destination system
+  S.syncWorld();
+  assert.equal(S.stations[2].grp.visible, true, 'NOVARA SPUR hub visible after arrival');
+  assert.equal(S.planetMeshes[4].visible, true, 'NOVARA visible after arrival');
+  assert.equal(S.planetMeshes[5].visible, true, 'UMBRA visible after arrival');
+  assert.equal(S.stations[0].grp.visible, false, 'ORION REACH hub hidden after arrival');
+  assert.equal(S.planetMeshes[0].visible, false, 'TERRA PRIME hidden after arrival');
+  assert.equal(S.planetMeshes[1].visible, false, 'VERDANT hidden after arrival');
+});
+
 test('TAB render exposes the ACTIVE MISSIONS section header', () => {
   const { window } = makeContext();
   const PD = window.PD;
