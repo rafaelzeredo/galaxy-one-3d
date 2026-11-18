@@ -1027,16 +1027,16 @@
       this.hull.rotation.x = this.warp ? 0 : Math.max(-0.25, Math.min(0.25, pitchRate * 0.12));
 
       // thrust: smoothed throttle for gradual engine spool (no jerky on/off).
-      // Command (Meta) = full thrust / accelerate, Option (Alt) = release thrust /
-      // brake. W/S are pitch-only and never drive thrust.
+      // N = full thrust / accelerate, M = release thrust / brake. W/S are
+      // pitch-only and never drive thrust.
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
-      const wantThrust = (!this.warp && inp.keys.has('Meta')) ? 1 : 0;
+      const wantThrust = (!this.warp && inp.keys.has('KeyN')) ? 1 : 0;
       this.thrustS += (wantThrust - this.thrustS) * Math.min(1, (wantThrust > this.thrustS ? 5.5 : 7) * dt);
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
         if(wantThrust) this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
         // no direct key-based braking: deceleration comes from throttle release
-        // (Option / no thrust) through the drag + smoothed-thrust decay below.
+        // (M / no thrust) through the drag + smoothed-thrust decay below.
         this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
         const spd2 = this.vel.length(), maxS2 = PD.maxSpeed();
         if(spd2 > maxS2) this.vel.multiplyScalar(maxS2 / spd2);

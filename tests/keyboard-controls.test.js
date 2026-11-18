@@ -1,6 +1,5 @@
 'use strict';
-// Keyboard-only spaceflight controls (Step 4): W/S pitch, A/D turn, Command/Option
-// thrust, Space fire — mouse steering removed, no pointer lock, release stops rotation.
+// Keyboard-only spaceflight controls (Step 4): W/S pitch, A/D turn, N/M thrust, Space fire — mouse steering removed, no pointer lock, release stops rotation.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -118,20 +117,21 @@ test('flight controls source: W/S pitch, A/D turn, keyboard-only — no mouse or
   assert.ok(!/ArrowUp|ArrowDown|ArrowLeft|ArrowRight/.test(spaceSrc), 'space flight rotation must not use arrow keys');
 });
 
-test('flight controls source: engine thrust via Command / Option, W/S are pitch-only', () => {
-  assert.ok(/const wantThrust = \(!this\.warp && inp\.keys\.has\('Meta'\)\) \? 1 : 0;/.test(spaceSrc),
-    'Command key (Meta) drives full thrust / acceleration');
+test('flight controls source: engine thrust via N / M, W/S are pitch-only', () => {
+  assert.ok(/const wantThrust = \(!this\.warp && inp\.keys\.has\('KeyN'\)\) \? 1 : 0;/.test(spaceSrc),
+    'N key drives full thrust / acceleration');
   assert.ok(!/wantThrust = \(!this\.warp && inp\.keys\.has\('KeyW'\)\)/.test(spaceSrc),
     'W must not drive engine thrust any more');
+  assert.ok(!/keys\.has\('Meta'\)/.test(spaceSrc), 'Command thrust binding must be removed');
   assert.ok(!/KeyS'\)\) this\.vel\.multiplyScalar/.test(spaceSrc),
     'S must not brake directly — it pitches only now');
   assert.ok(/thrustS \+= \(wantThrust - this\.thrustS\)/.test(spaceSrc), 'throttle spool behaviour preserved');
 });
 
-test('Command / Option keydown is not consumed by unwanted browser shortcuts', () => {
-  // 'Meta' = Command (macOS ⌘), 'Alt' = Option (macOS ⌥) are preventDefault-ed so the
-  // flight throttle keys cannot leak into browser/OS shortcuts on macOS.
-  assert.ok(/'Tab','Meta','Alt'\]/.test(gameSrc), 'Command/Option added to the preventDefault key list');
+test('flight throttle keys N / M are preventDefault-ed so they cannot trigger browser shortcuts', () => {
+  // N/M are added to the preventDefault key list so they never leak into unwanted
+  // browser/OS shortcuts while flying.
+  assert.ok(/'Tab','KeyN','KeyM'\]/.test(gameSrc), 'N/M added to the preventDefault key list');
 });
 
 test('releasing directional keys stops rotation (keyup clears, blur clears)', () => {
@@ -159,7 +159,7 @@ test('start screen control hints reflect the new keyboard-only flight scheme', (
   assert.ok(!/<b>MOUSE<\/b>/.test(idxSrc), 'start screen must not advertise mouse steering');
   assert.ok(/<b>W \/ S<\/b><span>pitch up \/ down<\/span>/.test(idxSrc), 'W/S pitch hint present');
   assert.ok(/<b>A \/ D<\/b><span>turn left \/ right<\/span>/.test(idxSrc), 'A/D turn hint present');
-  assert.ok(/⌘ \/ OPT/.test(idxSrc), 'Command/Option thrust hint present');
+  assert.ok(/<b>N \/ M<\/b><span>thrust \/ brake<\/span>/.test(idxSrc), 'N/M thrust hint present');
   assert.ok(/<b>SPACE<\/b><span>fire lasers<\/span>/.test(idxSrc), 'SPACE fire hint present');
 });
 
@@ -245,23 +245,23 @@ test('runtime: releasing turn keys stops rotation (no continuous spin)', () => {
   assert.ok(quatAngle(t.context, frozen, S.ship.quaternion) < 1e-6, 'rotation must stop after key release');
 });
 
-test('runtime: Command (Meta) accelerates via throttle spool, release coasts; Option (Alt) brakes', () => {
+test('runtime: N accelerates via throttle spool, M brakes, release coasts', () => {
   const t = bootSpace();
   const { S, Game, PD, frame } = t;
   Game.input.keys.clear();
-  Game.input.keys.add('Meta');
+  Game.input.keys.add('KeyN');
   frame(0.016); frame(0.016); frame(0.016);
-  assert.ok(S.thrustS > 0.001, 'Command must spool thrust up');
-  assert.ok(S.vel.length() > 0, 'Command must accelerate the ship');
+  assert.ok(S.thrustS > 0.001, 'N must spool thrust up');
+  assert.ok(S.vel.length() > 0, 'N must accelerate the ship');
   assert.ok(S.vel.length() <= PD.maxSpeed(), 'speed must respect the max speed limit');
   Game.input.keys.clear();
   frame(0.5);
-  assert.equal(S.thrustS, 0, 'thrust must release when Command is let go');
+  assert.equal(S.thrustS, 0, 'thrust must release when N is let go');
 
   Game.input.keys.clear();
-  Game.input.keys.add('Alt');
+  Game.input.keys.add('KeyM');
   frame(0.5);
-  assert.equal(S.thrustS, 0, 'Option must release thrust');
+  assert.equal(S.thrustS, 0, 'M must release thrust');
 });
 
 test('runtime: Space fires while stationary', () => {
@@ -278,7 +278,7 @@ test('runtime: Space fires while moving, turning and thrusting', () => {
   const t = bootSpace();
   const { S, Game, frame } = t;
   Game.input.keys.clear();
-  Game.input.keys.add('Meta');
+  Game.input.keys.add('KeyN');
   Game.input.keys.add('KeyD');
   Game.input.keys.add('Space');
   frame(0.5);
@@ -304,7 +304,7 @@ test('runtime: thrust spool respects the existing max speed limit', () => {
   const t = bootSpace();
   const { S, Game, PD, frame } = t;
   Game.input.keys.clear();
-  Game.input.keys.add('Meta');
+  Game.input.keys.add('KeyN');
   let frames = 0;
   let maxLen = 0;
   while(frames < 900){ // ~15s of full throttle at ~60fps

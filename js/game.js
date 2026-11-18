@@ -84,10 +84,7 @@
       this.input = inp;
       window.addEventListener('keydown', e => {
         const c = e.code;
-        // 'Meta' = Command (macOS ⌘), 'Alt' = Option (macOS ⌥): preventDefault so
-        // throttle keys never leak into unwanted browser/OS shortcuts (Cmd+R reload,
-        // Cmd+T new tab, Cmd+W close window, …) on macOS.
-        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab','Meta','Alt'].indexOf(c) >= 0) e.preventDefault();
+        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab','KeyN','KeyM'].indexOf(c) >= 0) e.preventDefault();
         window.GameAudio.init(); window.GameAudio.resume();
         if(!inp.keys.has(c)) inp.pressedCodes.add(c);
         inp.keys.add(c);
