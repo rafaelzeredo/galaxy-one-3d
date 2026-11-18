@@ -1072,7 +1072,11 @@
           const spd3 = this.vel.length();
           const stopDist = (spd3 * spd3) / (2 * 900);
           if(distT < 45){ // reached the arrival pad
-            this.vel.set(0, 0, 0);
+            // new spaceflight segment begins -> ship starts at the default cruising speed
+            const arrFwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
+            this.vel = V3(0, 0, 0);
+            this.vel.copy(arrFwd).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
+            this.thrustS = 0; // persistent throttle starts fresh on the new segment
             this.ship.position.copy(this.warp.pos);
             const prevSys = window.PD.systemIdx;
             window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);

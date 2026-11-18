@@ -177,6 +177,14 @@ test('flight starts at default cruising speed of approximately one third of max 
   assert.ok(/maxSpeed\(\) \/ 3/.test(spaceSrc), 'enter/respawn preset cruising speed = maxSpeed / 3');
 });
 
+test('warp arrival also begins the new spaceflight segment at the default cruising speed', () => {
+  assert.ok(/if\(distT < 45\)\{ \/\/ reached the arrival pad/.test(spaceSrc), 'warp arrival branch present');
+  assert.ok(/this\.vel = V3\(0, 0, 0\);[\s\S]{0,300}this\.vel\.copy\(arrFwd\)\.multiplyScalar\(window\.PD\.maxSpeed\(\) \/ 3\)/.test(spaceSrc),
+    'warp arrival resets velocity then sets default cruising speed');
+  assert.ok(/this\.thrustS = 0; \/\/ persistent throttle starts fresh on the new segment/.test(spaceSrc),
+    'warp arrival resets persistent throttle on the new segment');
+});
+
 test('player ship is rendered at approximately 50% of its design size', () => {
   assert.ok(/this\.ship\.scale\.setScalar\(0\.5\)/.test(spaceSrc), 'ship scale set to 0.5 (design size)');
 });
