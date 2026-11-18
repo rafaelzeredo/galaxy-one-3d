@@ -77,14 +77,17 @@
       const inp = {
         keys: new Set(),
         pressedCodes: new Set(),
-        mouseX: 0, mouseY: 0, mouseDown: false,
+        mouseDown: false,
         mouseWorldX: 0, mouseWorldY: 0,
         pressed(code){ return this.pressedCodes.has(code); }
       };
       this.input = inp;
       window.addEventListener('keydown', e => {
         const c = e.code;
-        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab'].indexOf(c) >= 0) e.preventDefault();
+        // 'Meta' = Command (macOS ⌘), 'Alt' = Option (macOS ⌥): preventDefault so
+        // throttle keys never leak into unwanted browser/OS shortcuts (Cmd+R reload,
+        // Cmd+T new tab, Cmd+W close window, …) on macOS.
+        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab','Meta','Alt'].indexOf(c) >= 0) e.preventDefault();
         window.GameAudio.init(); window.GameAudio.resume();
         if(!inp.keys.has(c)) inp.pressedCodes.add(c);
         inp.keys.add(c);
@@ -93,8 +96,8 @@
       window.addEventListener('keyup', e => inp.keys.delete(e.code));
       window.addEventListener('blur', () => inp.keys.clear());
       window.addEventListener('mousemove', e => {
-        inp.mouseX = (e.clientX / window.innerWidth) * 2 - 1;
-        inp.mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+        // pointer position is tracked only for planetary auto-aim (screen coords);
+        // it never feeds ship steering — spaceflight orientation is keyboard-only.
         inp.mouseWorldX = e.clientX;
         inp.mouseWorldY = e.clientY;
       });

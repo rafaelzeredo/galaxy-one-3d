@@ -992,15 +992,15 @@
         }
       }
 
-      // steering: mouse offset from center = turn rate (GOF2 virtual-stick feel)
+      // steering: keyboard-only during spaceflight. W/S pitch the nose up/down,
+      // A/D yaw left/right — orientation only, thrust is never touched here.
+      // No mouse influence: pointer position no longer rotates the ship (the old
+      // virtual-stick feel let a stray mouse offset spin the vessel continuously).
       // No roll input: yaw + pitch only, with auto-level to prevent upside-down drift.
-      const mx = inp.mouseX, my = inp.mouseY; // normalized -1..1
-      const dead = 0.06;
-      const steer = v => Math.abs(v) < dead ? 0 : (v - Math.sign(v) * dead) / (1 - dead);
       const keyYaw = (inp.keys.has('KeyD') ? 1 : 0) - (inp.keys.has('KeyA') ? 1 : 0);
-      const keyPitch = (inp.keys.has('ArrowDown') ? 1 : 0) - (inp.keys.has('ArrowUp') ? 1 : 0);
-      const yawRate = steer(mx) * -1.6 - keyYaw * 1.15;
-      const pitchRate = steer(my) * -1.25 + keyPitch * 0.9;
+      const keyPitch = (inp.keys.has('KeyS') ? 1 : 0) - (inp.keys.has('KeyW') ? 1 : 0);
+      const yawRate = -keyYaw * 1.15;
+      const pitchRate = keyPitch * 0.9;
       if(!this.warp){
         this.ship.rotateY(yawRate * dt);
         this.ship.rotateX(pitchRate * dt);
@@ -1026,14 +1026,17 @@
       this.hull.rotation.z = this.bank;
       this.hull.rotation.x = this.warp ? 0 : Math.max(-0.25, Math.min(0.25, pitchRate * 0.12));
 
-      // thrust: smoothed throttle for gradual engine spool (no jerky on/off)
+      // thrust: smoothed throttle for gradual engine spool (no jerky on/off).
+      // Command (Meta) = full thrust / accelerate, Option (Alt) = release thrust /
+      // brake. W/S are pitch-only and never drive thrust.
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
-      const wantThrust = (!this.warp && inp.keys.has('KeyW')) ? 1 : 0;
+      const wantThrust = (!this.warp && inp.keys.has('Meta')) ? 1 : 0;
       this.thrustS += (wantThrust - this.thrustS) * Math.min(1, (wantThrust > this.thrustS ? 5.5 : 7) * dt);
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
         if(wantThrust) this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
-        if(inp.keys.has('KeyS')) this.vel.multiplyScalar(Math.max(0, 1 - 1.8 * dt));
+        // no direct key-based braking: deceleration comes from throttle release
+        // (Option / no thrust) through the drag + smoothed-thrust decay below.
         this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
         const spd2 = this.vel.length(), maxS2 = PD.maxSpeed();
         if(spd2 > maxS2) this.vel.multiplyScalar(maxS2 / spd2);
