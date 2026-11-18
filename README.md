@@ -15,10 +15,13 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
 
 ## Loop
 
-1. Fly in 3D space (keyboard-only: `W`/`S` pitch, `A`/`D` turn, `N`/`M` thrust,
+1. Fly in 3D space (keyboard-only: `W`/`S` pitch, `A`/`D` turn, `B`/`N` thrust,
    `SPACE` lasers). Orientation comes from the keyboard only — the mouse never
    steers the ship during spaceflight. Pitch + yaw only, with auto-level — the
    ship can't end up upside-down. Lasers fire toward the crosshair (converging camera ray).
+   Thrust is a persistent throttle: the ship starts at a default cruising speed of
+   ~1/3 max speed; hold `B` to accelerate toward max, release to hold that speed;
+   hold `N` to brake toward zero, release to hold. `M` mutes audio.
 2. Shoot asteroids → collect floating ore. Fight pirates. Earn credits.
 3. Targeting: hover the crosshair over an object to see its bracket + info panel
    (name / type / distance / value). Hold the crosshair on a target to **lock on** —
@@ -82,9 +85,9 @@ long range (LOD) and every destroyed raider pays its own type-specific bounty.
 - Warp is **blocked while hostiles are within 700u** — clear the sector first.
 
 ## Feel & Fidelity
-- Smooth thrust: the throttle spools up over ~0.5s (N = full thrust /
-  accelerate, M = release / brake); twin engine flames, plume
-  glow and particle trails all scale with throttle.
+- Smooth thrust: the throttle spools up over ~0.5s (B = accelerate toward the max
+  speed, N = brake toward zero, both persistent while held); twin engine flames,
+  plume glow and particle trails all scale with throttle.
 - The hull visually banks into turns and relaxes when you level out.
 - Dynamic lighting: colored nebula wash lights brighten dark sectors, a ship
   headlight reads nearby rocks, and pirates carry blinking red beacons, halos

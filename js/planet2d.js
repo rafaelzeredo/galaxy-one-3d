@@ -227,6 +227,16 @@
       return Math.hypot(this.player.x - this.state.ship.x, this.player.y - this.state.ship.y) < 70;
     },
 
+    // Alien population management (Step 1 Update): baseline pack size scales with
+    // the planet's hostility; the cap bounds long-run populations.
+    alienBaseline(){
+      const rate = this.planet ? this.planet.alienRate : 0;
+      return Math.round(6 + rate * 7);
+    },
+    alienCap(){
+      return 14;
+    },
+
     // Alien movement tuning (Living World Update): chasers scale with the
     // planet's hostility so hostile packs pursue at ~player-run speed (or a bit
     // faster, harder to escape by running); spitters keep a slower ranged
@@ -440,18 +450,17 @@
         al.y = Math.max(40, Math.min(WORLD - 40, al.y));
       }
 
-      // nests keep breeding on hostile worlds
+      // gradual alien respawn: time-based repopulation toward the planet's
+      // baseline population while under the per-planet cap (never instant, never
+      // above the cap; refills after kills and on revisit via enter()).
       this.spawnT -= dt;
+      const alienFloor = Math.min(this.alienCap(), Math.max(0, this.alienBaseline()));
       if(this.spawnT <= 0){
-        this.spawnT = 12;
-        if(this.aliens.length < 14 && this.planet.alienRate > 0.5){
+        this.spawnT = Math.max(2, 14 - this.planet.alienRate * 2);
+        if(this.aliens.length < alienFloor && this.aliens.length < this.alienCap()){
           const nest = this.state.nestsR[Math.floor(Math.random() * this.state.nestsR.length)];
           if(nest){
-            this.aliens.push({
-              x: nest.x + (Math.random() - 0.5) * 60, y: nest.y + (Math.random() - 0.5) * 60,
-              hp: 16, spitter: false, speed: this.alienSpeed(this.planet.alienRate, false),
-              t: 0, atkT: 0, wob: Math.random() * 6.28
-            });
+            this._spawnAlien(false);
           }
         }
       }

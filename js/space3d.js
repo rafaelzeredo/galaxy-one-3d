@@ -440,6 +440,8 @@
       this.scene.add(this.ship);
       this.ship.position.set(0, 0, 300);
       this.ship.quaternion.setFromEuler(new THREE.Euler(0, Math.PI, 0));
+      // Step 1 (Update): player ship rendered at approximately 50% of its design size
+      this.ship.scale.setScalar(0.5);
     },
 
     _buildPlanets(){
@@ -502,7 +504,9 @@
       } else {
         this.ship.position.set(0, 0, 300);
         this.ship.quaternion.setFromEuler(new THREE.Euler(0, Math.PI, 0));
+        const fwd0 = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
         this.vel = V3(0, 0, 0);
+        this.vel.copy(fwd0).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
       }
       if(!this.vel) this.vel = V3(0, 0, 0);
       window.PD.resetShipState();
@@ -580,7 +584,10 @@
     respawn(){
       this.ship.position.set(0, 40, 300);
       this.ship.quaternion.setFromEuler(new THREE.Euler(0, Math.PI, 0));
+      const fwdR = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
       this.vel = V3(0, 0, 0);
+      this.vel.copy(fwdR).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
+      this.thrustS = 0;
       for(const p of this.pirates) this.scene.remove(p.mesh);
       this.pirates.length = 0;
       window.PD.systemIdx = 0; // rebuilt at ORION STATION
@@ -1026,18 +1033,29 @@
       this.hull.rotation.z = this.bank;
       this.hull.rotation.x = this.warp ? 0 : Math.max(-0.25, Math.min(0.25, pitchRate * 0.12));
 
-      // thrust: smoothed throttle for gradual engine spool (no jerky on/off).
-      // N = full thrust / accelerate, M = release thrust / brake. W/S are
-      // pitch-only and never drive thrust.
+      // thrust: persistent throttle setting (0..1). B holds to accelerate up to the
+      // max speed; N holds to brake down to zero; releasing a key holds the setting
+      // (the ship coasts instead of auto-decelerating).
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
-      const wantThrust = (!this.warp && inp.keys.has('KeyN')) ? 1 : 0;
+      const holdB = inp.keys.has('KeyB');
+      const holdN = inp.keys.has('KeyN');
+      const wantThrust = holdB ? 1 : (holdN ? 0 : this.thrustS);
       this.thrustS += (wantThrust - this.thrustS) * Math.min(1, (wantThrust > this.thrustS ? 5.5 : 7) * dt);
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
-        if(wantThrust) this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
-        // no direct key-based braking: deceleration comes from throttle release
-        // (M / no thrust) through the drag + smoothed-thrust decay below.
-        this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
+        if(holdN){
+          // holding N continuously brakes toward zero (magnitude-aware, no overshoot)
+          const spd = this.vel.length();
+          if(spd > 0.001){
+            const nextSpd = spd - PD.thrust() * dt;
+            if(nextSpd > 0) this.vel.setLength(nextSpd);
+            else this.vel.set(0, 0, 0);
+          }
+        } else if(this.thrustS > 0){
+          this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
+          this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
+        }
+        // persistent throttle: setting 0 without braking -> coast, no drag, no thrust
         const spd2 = this.vel.length(), maxS2 = PD.maxSpeed();
         if(spd2 > maxS2) this.vel.multiplyScalar(maxS2 / spd2);
       }
