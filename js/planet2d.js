@@ -62,6 +62,8 @@
       const s = this.state.ship;
       this.player.x = s.x;
       this.player.y = s.y + 40;
+      this.aliens = [];
+      this.bullets = [];
       // crash recovery: set up wreck, salvage and guards on the crash planet
       const cr = PD.crashRecovery;
       if(cr && cr.active && cr.planetIdx === planetIdx){
@@ -92,9 +94,7 @@
         }
       }
       this.harvest = null;
-      this.bullets = [];
       this.fx = [];
-      this.aliens = [];
       // seamless landing: white descent flash + drifting atmosphere
       this.enterFlash = 1;
       this.cloudShadows = [];
@@ -358,7 +358,7 @@
 
       // shoot
       this.fireT -= dt;
-      const w = WEAPON_DEFS[window.PD.equippedWeapon];
+      const w = (window.WEAPON_DEFS || {})[window.PD.equippedWeapon];
       if(w){
         // Recoil gradually recovers over time, even while running or not firing
         this.recoil = Math.max(0, this.recoil - dt * w.recoilRecovery);
@@ -572,7 +572,7 @@
 
       // crash recovery: salvage collection + trader guaranteed stock + repair
       const _cr = PD.crashRecovery;
-      if(_cr && _cr.active && _cr.planetIdx === planetIdx && this.state.wreck){
+      if(_cr && _cr.active && _cr.planetIdx === PD.planetIndex && this.state.wreck){
         const w = this.state.wreck;
         const nearWreck = Math.hypot(w.x - p.x, w.y - p.y) < 70;
         if(!_cr.have) _cr.have = { hull_plate: 0, power_cell: 0 };
@@ -1116,7 +1116,7 @@
       }
       // planetary HUD: equipped weapon + energy cells
       if(window.PD.equippedWeapon){
-        const w = WEAPON_DEFS[window.PD.equippedWeapon];
+        const w = (window.WEAPON_DEFS || {})[window.PD.equippedWeapon];
         ctx.fillStyle = 'rgba(4,10,20,0.75)';
         ctx.fillRect(16, 16, 200, 44);
         ctx.strokeStyle = 'rgba(95,240,255,0.3)';
@@ -1132,7 +1132,7 @@
         // owned weapons
         let ox = 26;
         for(const wk of window.PD.weapons){
-          const wd = WEAPON_DEFS[wk];
+          const wd = (window.WEAPON_DEFS || {})[wk];
           const active = window.PD.equippedWeapon === wk;
           ctx.fillStyle = active ? '#5ff0ff' : '#8fc6d8';
           ctx.fillText((active ? '▶ ' : '  ') + wd.name, ox + 110, 34);
