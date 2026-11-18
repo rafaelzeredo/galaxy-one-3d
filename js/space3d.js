@@ -942,12 +942,13 @@
 
     // asteroid collisions: destroy asteroid + ore drop + 70 damage, once per asteroid
     _handleAsteroidCollisions(prevPos){
-      const shipR = 12;
+      const shipR = 6;
       const curr = this.ship.position;
       for(let a = this.asteroids.length - 1; a >= 0; a--){
         const ast = this.asteroids[a];
         const center = ast.mesh.position;
-        const rad = ast.r + shipR;
+        const cr = (ast.cr != null) ? ast.cr : ast.r * 1.15;
+        const rad = cr + shipR;
         if(this._segSphereHit(prevPos, curr, center, rad)){
           // destroy asteroid + ore drops (reuse existing destruction logic)
           this._spawnExplosion(ast.mesh.position, false);
@@ -974,7 +975,7 @@
 
     // planet collisions: keep ship outside solid surface (smooth push-out)
     _collidePlayer(){
-      const shipR = 12;
+      const shipR = 6;
       for(const pm of this.planetMeshes){
         const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
         const def = window.PLANETS[idx];
@@ -1227,7 +1228,7 @@
           let hit = false;
           for(let a = this.asteroids.length - 1; a >= 0; a--){
             const ast = this.asteroids[a];
-            if(l.mesh.position.distanceTo(ast.mesh.position) < ast.r + 2){
+            if(l.mesh.position.distanceTo(ast.mesh.position) < (ast.cr != null ? ast.cr : ast.r * 1.15) + 2){
               ast.hp -= l.dmg;
               this._hit(l.mesh.position);
               if(ast.hp <= 0){
@@ -1555,7 +1556,7 @@
       mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       // slight non-uniform scale so they read as irregular rocks, not perfect polyhedra
       mesh.scale.set(0.85 + Math.random() * 0.3, 0.85 + Math.random() * 0.3, 0.85 + Math.random() * 0.3);
-      this.asteroids.push({ mesh, r, hp: 20 + r * 2, spin: (Math.random() - 0.5) * 0.4 });
+      this.asteroids.push({ mesh, r, cr: r * Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z), hp: 20 + r * 2, spin: (Math.random() - 0.5) * 0.4 });
       this.scene.add(mesh);
     }
   };
