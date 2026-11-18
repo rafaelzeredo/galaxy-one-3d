@@ -117,18 +117,19 @@ test('flight controls source: W/S pitch, A/D turn, keyboard-only — no mouse or
   assert.ok(!/ArrowUp|ArrowDown|ArrowLeft|ArrowRight/.test(spaceSrc), 'space flight rotation must not use arrow keys');
 });
 
-test('flight controls source: engine thrust via persistent B / N throttle, W/S are pitch-only', () => {
-  assert.ok(/const holdB = inp\.keys\.has\('KeyB'\)/.test(spaceSrc), 'B holds to accelerate / increase speed');
+test('flight controls source: engine thrust via B / N throttle, W/S are pitch-only', () => {
+  assert.ok(/const holdB = inp\.keys\.has\('KeyB'\)/.test(spaceSrc), 'B holds to increase / accelerate speed');
   assert.ok(/const holdN = inp\.keys\.has\('KeyN'\)/.test(spaceSrc), 'N holds to brake / reduce speed');
-  assert.ok(/const wantThrust = holdB \? 1 : \(holdN \? 0 : this\.thrustS\)/.test(spaceSrc),
-    'persistent throttle holds the last setting when a key is released');
+  assert.ok(/const wantThrust = holdB \? 1 : 0;/.test(spaceSrc),
+    'throttle driven by held B only (released -> coast, no persistent setting)');
   assert.ok(!/wantThrust = \(!this\.warp && inp\.keys\.has\('KeyN'\)\)/.test(spaceSrc),
     'old N-as-thrust mapping must be removed');
   assert.ok(!/wantThrust = \(!this\.warp && inp\.keys\.has\('KeyW'\)\)/.test(spaceSrc),
     'W must not drive engine thrust any more');
   assert.ok(!/KeyS'\)\) this\.vel\.multiplyScalar/.test(spaceSrc),
     'S must not brake directly — it pitches only now');
-  assert.ok(/thrustS \+= \(wantThrust - this\.thrustS\)/.test(spaceSrc), 'throttle spool behaviour preserved');
+  assert.ok(!/this\.vel\.multiplyScalar\(Math\.max\(0, 1 - 0\.25 \* dt\)\)/.test(spaceSrc),
+    'no automatic friction / deceleration overriding the selected speed');
 });
 
 test('flight throttle keys B / N are preventDefault-ed so they cannot trigger browser shortcuts', () => {
@@ -181,7 +182,7 @@ test('warp arrival also begins the new spaceflight segment at the default cruisi
   assert.ok(/if\(distT < 45\)\{ \/\/ reached the arrival pad/.test(spaceSrc), 'warp arrival branch present');
   assert.ok(/this\.vel = V3\(0, 0, 0\);[\s\S]{0,300}this\.vel\.copy\(arrFwd\)\.multiplyScalar\(window\.PD\.maxSpeed\(\) \/ 3\)/.test(spaceSrc),
     'warp arrival resets velocity then sets default cruising speed');
-  assert.ok(/this\.thrustS = 0; \/\/ persistent throttle starts fresh on the new segment/.test(spaceSrc),
+  assert.ok(/this\.thrustS = 0;/.test(spaceSrc),
     'warp arrival resets persistent throttle on the new segment');
 });
 
@@ -276,37 +277,42 @@ test('runtime: releasing turn keys stops rotation (no continuous spin)', () => {
   assert.ok(quatAngle(t.context, frozen, S.ship.quaternion) < 1e-6, 'rotation must stop after key release');
 });
 
-test('runtime: B accelerates via persistent throttle, N brakes, release coasts', () => {
+test('runtime: B increases speed while held and holds on release; N decreases and holds on release', () => {
   const t = bootSpace();
   const { S, Game, PD, frame } = t;
-  // default flight state: cruising ≈ one-third of max speed, no throttle engaged
   S.thrustS = 0;
   const cruise = PD.maxSpeed() / 3;
   S.vel.set(0, 0, -cruise);
 
-  // B held -> persistent throttle up -> accelerates toward max
+  // B held -> speed increases
   Game.input.keys.clear();
   Game.input.keys.add('KeyB');
   let bf = 0;
-  while(S.thrustS < 0.9 && bf < 900){ frame(1 / 60); bf++; }
-  assert.ok(S.thrustS > 0.9, 'B must spool thrust up to full');
-  assert.ok(S.vel.length() > 0, 'B must accelerate the ship');
+  while(S.vel.length() < cruise + 5 && bf++ < 900){ frame(1 / 60); }
+  assert.ok(S.vel.length() > cruise, 'B must accelerate the ship');
   assert.ok(S.vel.length() <= PD.maxSpeed(), 'speed must respect the max speed limit');
-  Game.input.keys.clear();
-  frame(0.5);
-  assert.ok(S.thrustS > 0.9, 'release B holds the throttle setting (coasts, no auto-decel)');
-  assert.ok(S.vel.length() > 0, 'ship keeps moving after B release');
 
-  // N held -> persistent throttle down -> brakes toward zero
+  // release B -> speed holds (coast, no auto-decel)
+  Game.input.keys.clear();
+  const heldB = S.vel.length();
+  frame(0.5); frame(0.5);
+  assert.ok(Math.abs(S.vel.length() - heldB) < 0.01, 'release B must hold the speed reached');
+
+  // N held -> speed decreases
   Game.input.keys.clear();
   Game.input.keys.add('KeyN');
-  frame(0.5);
-  assert.ok(S.thrustS < 0.1, 'N must brake the throttle setting down');
-  frame(0.5);
-  assert.equal(S.thrustS, 0, 'N must release thrust');
+  let nf = 0;
+  while(S.vel.length() > cruise - 5 && nf++ < 900){ frame(1 / 60); }
+  assert.ok(S.vel.length() < heldB, 'N must decelerate the ship');
+
+  // release N -> speed holds (coast, no continued deceleration)
+  Game.input.keys.clear();
+  const heldN = S.vel.length();
+  frame(0.5); frame(0.5);
+  assert.ok(Math.abs(S.vel.length() - heldN) < 0.01, 'release N must hold the speed reached');
 });
 
-test('runtime: holding N brakes the ship toward zero and it stays stopped until B', () => {
+test('runtime: holding N reduces speed to zero and it stays stopped until B', () => {
   const t = bootSpace();
   const { S, Game, PD, frame } = t;
   S.thrustS = 0;
@@ -316,16 +322,32 @@ test('runtime: holding N brakes the ship toward zero and it stays stopped until 
   Game.input.keys.clear();
   Game.input.keys.add('KeyN');
   let guard = 0;
-  while(S.vel.length() > 0.001 && guard++ < 900){ // ~15s of braking at ~60fps
+  while(S.vel.length() > 0.001 && guard++ < 900){
     frame(1 / 60);
   }
   assert.ok(S.vel.length() < 0.5, 'holding N must bring the ship to zero speed');
-  assert.equal(S.thrustS, 0, 'throttle released while braking');
 
-  // released N -> persistent zero setting -> ship stays stopped
+  // released N -> speed holds (coast)
   Game.input.keys.clear();
   frame(0.5);
   assert.ok(S.vel.length() < 0.5, 'ship must remain stopped after N release at zero');
+});
+
+test('runtime: releasing B holds the reached speed (no continued acceleration)', () => {
+  const t = bootSpace();
+  const { S, Game, PD, frame } = t;
+  S.thrustS = 0;
+  S.vel.set(0, 0, 0); // start at zero
+  Game.input.keys.clear();
+  Game.input.keys.add('KeyB');
+  let f = 0;
+  while(S.vel.length() < 30 && f++ < 900){ // hold B until speed reaches 30
+    frame(1 / 60);
+  }
+  const frozen = S.vel.length();
+  Game.input.keys.clear(); // release B -> speed must hold
+  for(let i = 0; i < 30; i++) frame(1 / 60);
+  assert.ok(Math.abs(S.vel.length() - frozen) < 0.01, 'B release must hold the reached speed, was: ' + S.vel.length());
 });
 
 test('runtime: holding B from zero restores movement and can reach maximum speed', () => {

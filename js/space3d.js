@@ -1033,29 +1033,28 @@
       this.hull.rotation.z = this.bank;
       this.hull.rotation.x = this.warp ? 0 : Math.max(-0.25, Math.min(0.25, pitchRate * 0.12));
 
-      // thrust: persistent throttle setting (0..1). B holds to accelerate up to the
-      // max speed; N holds to brake down to zero; releasing a key holds the setting
-      // (the ship coasts instead of auto-decelerating).
+      // thrust: direct hold-to-thrust / hold-to-brake. B held = speed increases;
+      // N held = speed decreases; releasing a key stops the change and the ship
+      // coasts at the speed reached (no persistent setting, no automatic friction).
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
       const holdB = inp.keys.has('KeyB');
       const holdN = inp.keys.has('KeyN');
-      const wantThrust = holdB ? 1 : (holdN ? 0 : this.thrustS);
+      // smooth visual/audio throttle (0..1) — does not affect velocity persistence
+      const wantThrust = holdB ? 1 : 0;
       this.thrustS += (wantThrust - this.thrustS) * Math.min(1, (wantThrust > this.thrustS ? 5.5 : 7) * dt);
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
-        if(holdN){
-          // holding N continuously brakes toward zero (magnitude-aware, no overshoot)
+        if(holdB){
+          this.vel.addScaledVector(fwd, PD.thrust() * dt);
+        } else if(holdN){
           const spd = this.vel.length();
           if(spd > 0.001){
             const nextSpd = spd - PD.thrust() * dt;
             if(nextSpd > 0) this.vel.setLength(nextSpd);
             else this.vel.set(0, 0, 0);
           }
-        } else if(this.thrustS > 0){
-          this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
-          this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
         }
-        // persistent throttle: setting 0 without braking -> coast, no drag, no thrust
+        // hard speed cap (not friction)
         const spd2 = this.vel.length(), maxS2 = PD.maxSpeed();
         if(spd2 > maxS2) this.vel.multiplyScalar(maxS2 / spd2);
       }
@@ -1076,7 +1075,7 @@
             const arrFwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
             this.vel = V3(0, 0, 0);
             this.vel.copy(arrFwd).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
-            this.thrustS = 0; // persistent throttle starts fresh on the new segment
+            this.thrustS = 0;
             this.ship.position.copy(this.warp.pos);
             const prevSys = window.PD.systemIdx;
             window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);
