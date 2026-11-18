@@ -64,32 +64,37 @@
       this.player.y = s.y + 40;
       this.aliens = [];
       this.bullets = [];
-      // crash recovery: set up wreck, salvage and guards on the crash planet
+      // crash recovery: player's crashed ship (safe) + separate abandoned ship (salvage)
       const cr = PD.crashRecovery;
       if(cr && cr.active && cr.planetIdx === planetIdx){
-        if(!this.state.wreck){
+        if(!this.state.playerWreck){
           const wx = WORLD/2 + 80, wy = WORLD/2 - 60;
-          this.state.wreck = { x: wx, y: wy, repaired: false };
+          this.state.playerWreck = { x: wx, y: wy, repaired: false };
+          const ax = Math.max(120, Math.min(WORLD - 120, wx + 520));
+          const ay = Math.max(120, Math.min(WORLD - 120, wy + 380));
+          this.state.salvageWreck = { x: ax, y: ay };
           this.state.salvage = [
-            { x: wx + 40, y: wy + 20, type: 'hull_plate', collected: false },
-            { x: wx - 30, y: wy + 50, type: 'hull_plate', collected: false },
-            { x: wx + 10, y: wy - 40, type: 'power_cell', collected: false },
-            { x: wx - 50, y: wy - 20, type: 'power_cell', collected: false },
+            { x: ax + 30, y: ay + 10, type: 'hull_plate', collected: false },
+            { x: ax - 25, y: ay + 40, type: 'hull_plate', collected: false },
+            { x: ax + 5, y: ay - 35, type: 'power_cell', collected: false },
+            { x: ax - 45, y: ay - 15, type: 'power_cell', collected: false },
           ];
-          // guard aliens
-          for(let i = 0; i < 6; i++){
+          // guard aliens around the abandoned ship only
+          for(let i = 0; i < 5; i++){
             this._spawnAlien(Math.random() < 0.4);
             const al = this.aliens[this.aliens.length - 1];
-            if(al){ al.x = wx + (Math.random()-0.5)*140; al.y = wy + (Math.random()-0.5)*140; }
+            if(al){ al.x = ax + (Math.random()-0.5)*160; al.y = ay + (Math.random()-0.5)*160; }
           }
         }
         if(!cr.have) cr.have = { hull_plate: 0, power_cell: 0 };
         if(!cr.components) cr.components = { hull_plate: 3, power_cell: 2 };
+        if(!cr.playerWreck) cr.playerWreck = this.state.playerWreck;
+        if(!cr.salvageWreck) cr.salvageWreck = this.state.salvageWreck;
         this.repairT = (cr.progress || 0) * 6;
-        // park player near wreck
-        if(this.state.wreck){
-          this.player.x = this.state.wreck.x;
-          this.player.y = this.state.wreck.y + 60;
+        // park player near their crashed ship
+        if(this.state.playerWreck){
+          this.player.x = this.state.playerWreck.x;
+          this.player.y = this.state.playerWreck.y + 60;
           this.state.ship = { x: this.player.x, y: this.player.y - 40 };
         }
       }
@@ -570,11 +575,9 @@
         window.Game.openTrade();
       }
 
-      // crash recovery: salvage collection + trader guaranteed stock + repair
+      // crash recovery: salvage collection (at abandoned ship) + repair (at player's ship)
       const _cr = PD.crashRecovery;
-      if(_cr && _cr.active && _cr.planetIdx === PD.planetIndex && this.state.wreck){
-        const w = this.state.wreck;
-        const nearWreck = Math.hypot(w.x - p.x, w.y - p.y) < 70;
+      if(_cr && _cr.active && _cr.planetIdx === PD.planetIndex){
         if(!_cr.have) _cr.have = { hull_plate: 0, power_cell: 0 };
         if(!_cr.components) _cr.components = { hull_plate: 3, power_cell: 2 };
         const needHP = _cr.components.hull_plate - (_cr.have.hull_plate || 0);
@@ -592,21 +595,8 @@
             }
           }
         }
-        if(this.state.trader && Math.hypot(this.state.trader.x - p.x, this.state.trader.y - p.y) < 60 && (needHP > 0 || needPC > 0)){
-          if(inp.pressed('KeyE')){
-            const cost = needHP * 80 + needPC * 120;
-            if(PD.credits >= cost){
-              PD.credits -= cost;
-              _cr.have.hull_plate = (_cr.have.hull_plate || 0) + needHP;
-              _cr.have.power_cell = (_cr.have.power_cell || 0) + needPC;
-              PD.save();
-              window.GameAudio.uiBuy();
-              window.Game.uiToast('Purchased repair components');
-            } else {
-              window.Game.uiToast('Insufficient credits (need ' + cost + ' CR)');
-            }
-          }
-        }
+        const pw = this.state.playerWreck;
+        const nearWreck = pw && Math.hypot(pw.x - p.x, pw.y - p.y) < 70;
         if(nearWreck && (needHP <= 0 && needPC <= 0)){
           if(inp.keys.has('KeyE')){
             if(!this.repairT) this.repairT = (_cr.progress || 0) * 6;
@@ -616,7 +606,7 @@
             if(this.repairT >= 6){
               _cr.have.hull_plate = Math.max(0, (_cr.have.hull_plate || 0) - _cr.components.hull_plate);
               _cr.have.power_cell = Math.max(0, (_cr.have.power_cell || 0) - _cr.components.power_cell);
-              this.state.wreck.repaired = true;
+              if(pw) pw.repaired = true;
               _cr.active = false;
               PD.hp = PD.hullMax();
               PD.shield = PD.shieldMax();
@@ -926,20 +916,33 @@
         ctx.restore();
       }
 
-       // crash recovery: crashed spaceship + salvage components
+       // crash recovery: player's crashed ship (safe) + abandoned ship (salvage)
        const _cr = window.PD.crashRecovery;
-       if(_cr && _cr.active && _cr.planetIdx === window.PD.planetIndex && this.state.wreck){
-         const w = this.state.wreck;
-         if(w.x >= ox - 60 && w.x <= ox + vw + 60 && w.y >= oy - 60 && w.y <= oy + vh + 60){
+       if(_cr && _cr.active && _cr.planetIdx === window.PD.planetIndex){
+         const pw = this.state.playerWreck;
+         if(pw && pw.x >= ox - 60 && pw.x <= ox + vw + 60 && pw.y >= oy - 60 && pw.y <= oy + vh + 60){
            ctx.fillStyle = 'rgba(0,0,0,0.35)';
-           ctx.beginPath(); ctx.ellipse(w.x + 6, w.y + 10, 26, 10, 0, 0, 6.283); ctx.fill();
+           ctx.beginPath(); ctx.ellipse(pw.x + 6, pw.y + 10, 26, 10, 0, 0, 6.283); ctx.fill();
            ctx.fillStyle = '#ff6b6b';
            ctx.beginPath();
-           ctx.moveTo(w.x, w.y - 14); ctx.lineTo(w.x + 16, w.y + 8); ctx.lineTo(w.x - 16, w.y + 8);
+           ctx.moveTo(pw.x, pw.y - 14); ctx.lineTo(pw.x + 16, pw.y + 8); ctx.lineTo(pw.x - 16, pw.y + 8);
            ctx.closePath(); ctx.fill();
            ctx.fillStyle = '#ffd479';
            ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-           ctx.fillText('CRASHED SHIP', w.x, w.y - 20);
+           ctx.fillText('YOUR CRASHED SHIP', pw.x, pw.y - 20);
+           ctx.textAlign = 'left';
+         }
+         const sw = this.state.salvageWreck;
+         if(sw && sw.x >= ox - 60 && sw.x <= ox + vw + 60 && sw.y >= oy - 60 && sw.y <= oy + vh + 60){
+           ctx.fillStyle = 'rgba(0,0,0,0.35)';
+           ctx.beginPath(); ctx.ellipse(sw.x + 6, sw.y + 10, 26, 10, 0, 0, 6.283); ctx.fill();
+           ctx.fillStyle = '#9b6bff';
+           ctx.beginPath();
+           ctx.moveTo(sw.x, sw.y - 14); ctx.lineTo(sw.x + 16, sw.y + 8); ctx.lineTo(sw.x - 16, sw.y + 8);
+           ctx.closePath(); ctx.fill();
+           ctx.fillStyle = '#ffd479';
+           ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+           ctx.fillText('ABANDONED SHIP', sw.x, sw.y - 20);
            ctx.textAlign = 'left';
          }
          if(this.state.salvage){
@@ -1174,6 +1177,11 @@
       ctx.fillStyle = '#ffd479';
       if(st.ship) ctx.fillRect(mx + st.ship.x * sc - 2, my + st.ship.y * sc - 2, 5, 5);
       if(st.trader){ ctx.fillStyle = '#6bff9e'; ctx.fillRect(mx + st.trader.x * sc - 2, my + st.trader.y * sc - 2, 4, 4); }
+      const _cr2 = window.PD.crashRecovery;
+      if(_cr2 && _cr2.active && _cr2.planetIdx === window.PD.planetIndex){
+        if(this.state.playerWreck){ ctx.fillStyle = '#ff6b6b'; ctx.fillRect(mx + this.state.playerWreck.x * sc - 2, my + this.state.playerWreck.y * sc - 2, 5, 5); }
+        if(this.state.salvageWreck){ ctx.fillStyle = '#9b6bff'; ctx.fillRect(mx + this.state.salvageWreck.x * sc - 2, my + this.state.salvageWreck.y * sc - 2, 5, 5); }
+      }
       ctx.fillStyle = '#ff5f7a';
       for(const al of this.aliens) ctx.fillRect(mx + al.x * sc - 1, my + al.y * sc - 1, 2.5, 2.5);
       ctx.fillStyle = '#5ff0ff';

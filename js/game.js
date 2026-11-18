@@ -186,9 +186,14 @@
             progress: 0,
             components: { hull_plate: 3, power_cell: 2 },
             have: { hull_plate: 0, power_cell: 0 },
-            wreckX: null, wreckY: null,
-            salvaged: false,
+            playerWreck: null,
+            salvageWreck: null,
           };
+          // clear previous surface state for a fresh scenario
+          if(PD.surfaceStates) delete PD.surfaceStates[best];
+          // player health ~50% of max, valid living state
+          PD.playerHp = Math.max(1, Math.round(PD.playerHpMax() * 0.5));
+          PD.alive = true;
           window.Space.saveForLanding();
           PD.planetIndex = best;
           PD.save();
