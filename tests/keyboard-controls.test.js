@@ -120,9 +120,9 @@ test('flight controls source: W/S pitch, A/D turn, keyboard-only — no mouse or
 test('flight controls source: engine thrust via B / N throttle, W/S are pitch-only', () => {
   assert.ok(/const holdB = inp\.keys\.has\('KeyB'\)/.test(spaceSrc), 'B holds to increase thrust');
   assert.ok(/const holdN = inp\.keys\.has\('KeyN'\)/.test(spaceSrc), 'N holds to decrease thrust');
-  assert.ok(/this\.thrustS = Math\.min\(1, this\.thrustS \+ 5\.5 \* dt\);/.test(spaceSrc),
+  assert.ok(/this\.thrustS = Math\.min\(1, this\.thrustS \+ 0\.25 \* dt\);/.test(spaceSrc),
     'B held increases the engine thrust level');
-  assert.ok(/this\.thrustS = Math\.max\(0, this\.thrustS - 5\.5 \* dt\);/.test(spaceSrc),
+  assert.ok(/this\.thrustS = Math\.max\(0, this\.thrustS - 0\.25 \* dt\);/.test(spaceSrc),
     'N held decreases the engine thrust level');
   assert.ok(!/wantThrust = \(!this\.warp && inp\.keys\.has\('KeyN'\)\)/.test(spaceSrc),
     'old N-as-thrust mapping must be removed');

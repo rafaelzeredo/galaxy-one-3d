@@ -918,9 +918,86 @@
       }
     },
 
-    _collideAsteroids(){
-      // lazy rebuild of simple sphere list for laser checks
-      return this.asteroids;
+    // swept sphere vs sphere test
+    _segSphereHit(p0, p1, center, radius){
+      const dx = p1.x - p0.x, dy = p1.y - p0.y, dz = p1.z - p0.z;
+      const fx = p0.x - center.x, fy = p0.y - center.y, fz = p0.z - center.z;
+      const a = dx*dx + dy*dy + dz*dz;
+      if(a < 1e-12){
+        // no movement; point test
+        return (fx*fx + fy*fy + fz*fz) <= radius*radius;
+      }
+      const b = 2 * (fx*dx + fy*dy + fz*dz);
+      const c = (fx*fx + fy*fy + fz*fz) - radius*radius;
+      let disc = b*b - 4*a*c;
+      if(disc < 0) return false;
+      disc = Math.sqrt(disc);
+      const t1 = (-b - disc) / (2*a);
+      const t2 = (-b + disc) / (2*a);
+      if(t1 >= 0 && t1 <= 1) return true;
+      if(t2 >= 0 && t2 <= 1) return true;
+      if(t1 < 0 && t2 > 1) return true;
+      return false;
+    },
+
+    // asteroid collisions: destroy asteroid + ore drop + 70 damage, once per asteroid
+    _handleAsteroidCollisions(prevPos){
+      const shipR = 12;
+      const curr = this.ship.position;
+      for(let a = this.asteroids.length - 1; a >= 0; a--){
+        const ast = this.asteroids[a];
+        const center = ast.mesh.position;
+        const rad = ast.r + shipR;
+        if(this._segSphereHit(prevPos, curr, center, rad)){
+          // destroy asteroid + ore drops (reuse existing destruction logic)
+          this._spawnExplosion(ast.mesh.position, false);
+          window.GameAudio.boom();
+          this.scene.remove(ast.mesh);
+          const drops = 2 + Math.floor(Math.random() * 2);
+          for(let d = 0; d < drops; d++){
+            const ore = new THREE.Mesh(this.oreGeo,
+              new THREE.MeshBasicMaterial({ color: 0x9ad2ff }));
+            ore.position.copy(ast.mesh.position).add(V3((Math.random()-0.5)*6, (Math.random()-0.5)*6, (Math.random()-0.5)*6));
+            this.oreDrops.push({ mesh: ore, vel: V3((Math.random()-0.5)*12, (Math.random()-0.5)*12, (Math.random()-0.5)*12), life: 30 });
+            this.scene.add(ore);
+          }
+          this.asteroids.splice(a, 1);
+          // damage ship 70 (shields first, then hull) via existing PD.dmg
+          const PD = window.PD;
+          PD.dmg(70);
+          this.shieldDelay = 5;
+          this.shake = 0.35;
+          window.GameAudio.hurt();
+        }
+      }
+    },
+
+    // planet collisions: keep ship outside solid surface (smooth push-out)
+    _collidePlayer(){
+      const shipR = 12;
+      for(const pm of this.planetMeshes){
+        const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
+        const def = window.PLANETS[idx];
+        if(!def) continue;
+        const center = pm.position;
+        const r = def.size + shipR;
+        const toShip = this.ship.position.clone().sub(center);
+        const dist = toShip.length();
+        if(dist < r && dist > 0.001){
+          const push = r - dist;
+          this.ship.position.add(toShip.clone().normalize().multiplyScalar(push));
+          // cancel inward radial velocity so the ship slides along the surface
+          const n = toShip.clone().normalize();
+          const radial = this.vel.dot(n);
+          if(radial < 0) this.vel.addScaledVector(n, -radial);
+        } else if(dist <= 0.001){
+          // degenerate: push along forward
+          const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
+          this.ship.position.add(fwd.clone().multiplyScalar(r));
+        }
+      }
+      // asteroid collisions
+      if(this._shipPrevPos) this._handleAsteroidCollisions(this._shipPrevPos);
     },
 
     // Stage 1: rebuild the ambient asteroid field around the current system's hub
@@ -1041,9 +1118,9 @@
       const holdB = inp.keys.has('KeyB');
       const holdN = inp.keys.has('KeyN');
       if(holdB){
-        this.thrustS = Math.min(1, this.thrustS + 5.5 * dt);
+        this.thrustS = Math.min(1, this.thrustS + 0.25 * dt);
       } else if(holdN){
-        this.thrustS = Math.max(0, this.thrustS - 5.5 * dt);
+        this.thrustS = Math.max(0, this.thrustS - 0.25 * dt);
       }
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
@@ -1099,7 +1176,10 @@
 
       const spd = this.vel.length(), maxS = PD.maxSpeed();
       if(spd > maxS && !this.warp) this.vel.multiplyScalar(maxS / spd);
+      this._shipPrevPos = this.ship.position.clone();
       if(!this.warp) this.ship.position.addScaledVector(this.vel, dt);
+      // physical collisions (player ship)
+      if(!this.warp) this._collidePlayer();
       this.stats.speed = spd;
       this.stats.thrust = this.thrustS;
       window.GameAudio.engine(this.warp ? 1 : 0.12 + this.thrustS * 0.85 * (spd / maxS));
@@ -1132,6 +1212,17 @@
         l.life -= dt;
         l.mesh.position.addScaledVector(l.vel, dt);
         if(l.life <= 0){ this.scene.remove(l.mesh); this.lasers.splice(i, 1); continue; }
+        // planets block lasers
+        let planetHit = false;
+        for(const pm of this.planetMeshes){
+          const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
+          const def = window.PLANETS[idx];
+          if(!def) continue;
+          if(l.mesh.position.distanceTo(pm.position) < def.size){
+            planetHit = true; break;
+          }
+        }
+        if(planetHit){ this.scene.remove(l.mesh); this.lasers.splice(i, 1); continue; }
         if(l.mine){
           let hit = false;
           for(let a = this.asteroids.length - 1; a >= 0; a--){
@@ -1215,6 +1306,19 @@
           e.disabledT -= dt;
           const away = e.mesh.position.clone().sub(this.ship.position).normalize();
           e.mesh.position.addScaledVector(away, 42 * dt);
+          // keep disabled raider clear of planets
+          for(const pm of this.planetMeshes){
+            const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
+            const def = window.PLANETS[idx];
+            if(!def) continue;
+            const center = pm.position;
+            const r = def.size + 8;
+            const toP = e.mesh.position.clone().sub(center);
+            const d = toP.length();
+            if(d < r && d > 0.001){
+              e.mesh.position.add(toP.clone().normalize().multiplyScalar(r - d));
+            }
+          }
           e.mesh.lookAt(this.ship.position);
           const dblink = 0.35 + 0.65 * Math.abs(Math.sin(t * 18));
           if(e.beacon) e.beacon.material.opacity = dblink;
@@ -1229,6 +1333,23 @@
         const desired = toShip.multiplyScalar(Math.max(0, dist - 60) * 1.1);
         e.vel.lerp(desired.clampLength(0, e.type.speed), 0.03);
         e.mesh.position.addScaledVector(e.vel, dt);
+        // planet collision: keep pirate outside solid surface
+        for(const pm of this.planetMeshes){
+          const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
+          const def = window.PLANETS[idx];
+          if(!def) continue;
+          const center = pm.position;
+          const r = def.size + 8;
+          const toP = e.mesh.position.clone().sub(center);
+          const d = toP.length();
+          if(d < r && d > 0.001){
+            const push = r - d;
+            e.mesh.position.add(toP.clone().normalize().multiplyScalar(push));
+            const n = toP.clone().normalize();
+            const radial = e.vel.dot(n);
+            if(radial < 0) e.vel.addScaledVector(n, -radial);
+          }
+        }
         e.mesh.lookAt(this.ship.position);
         // dynamic bank: each hull sways in flight, stalkers lean harder
         const sway = e.type.key === 'stalker' ? 0.22 : e.type.key === 'warlord' ? 0.05 : 0.1;
