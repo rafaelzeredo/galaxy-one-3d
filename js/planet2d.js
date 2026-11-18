@@ -62,6 +62,35 @@
       const s = this.state.ship;
       this.player.x = s.x;
       this.player.y = s.y + 40;
+      // crash recovery: set up wreck, salvage and guards on the crash planet
+      const cr = PD.crashRecovery;
+      if(cr && cr.active && cr.planetIdx === planetIdx){
+        if(!this.state.wreck){
+          const wx = WORLD/2 + 80, wy = WORLD/2 - 60;
+          this.state.wreck = { x: wx, y: wy, repaired: false };
+          this.state.salvage = [
+            { x: wx + 40, y: wy + 20, type: 'hull_plate', collected: false },
+            { x: wx - 30, y: wy + 50, type: 'hull_plate', collected: false },
+            { x: wx + 10, y: wy - 40, type: 'power_cell', collected: false },
+            { x: wx - 50, y: wy - 20, type: 'power_cell', collected: false },
+          ];
+          // guard aliens
+          for(let i = 0; i < 6; i++){
+            this._spawnAlien(Math.random() < 0.4);
+            const al = this.aliens[this.aliens.length - 1];
+            if(al){ al.x = wx + (Math.random()-0.5)*140; al.y = wy + (Math.random()-0.5)*140; }
+          }
+        }
+        if(!cr.have) cr.have = { hull_plate: 0, power_cell: 0 };
+        if(!cr.components) cr.components = { hull_plate: 3, power_cell: 2 };
+        this.repairT = (cr.progress || 0) * 6;
+        // park player near wreck
+        if(this.state.wreck){
+          this.player.x = this.state.wreck.x;
+          this.player.y = this.state.wreck.y + 60;
+          this.state.ship = { x: this.player.x, y: this.player.y - 40 };
+        }
+      }
       this.harvest = null;
       this.bullets = [];
       this.fx = [];
@@ -540,6 +569,74 @@
       if(inp.pressed('KeyE') && target && kind === 'trader'){
         window.Game.openTrade();
       }
+
+      // crash recovery: salvage collection + trader guaranteed stock + repair
+      const _cr = PD.crashRecovery;
+      if(_cr && _cr.active && _cr.planetIdx === planetIdx && this.state.wreck){
+        const w = this.state.wreck;
+        const nearWreck = Math.hypot(w.x - p.x, w.y - p.y) < 70;
+        if(!_cr.have) _cr.have = { hull_plate: 0, power_cell: 0 };
+        if(!_cr.components) _cr.components = { hull_plate: 3, power_cell: 2 };
+        const needHP = _cr.components.hull_plate - (_cr.have.hull_plate || 0);
+        const needPC = _cr.components.power_cell - (_cr.have.power_cell || 0);
+        if(this.state.salvage){
+          for(const sv of this.state.salvage){
+            if(sv.collected) continue;
+            if(Math.hypot(sv.x - p.x, sv.y - p.y) < 30 && inp.pressed('KeyE')){
+              sv.collected = true;
+              _cr.have[sv.type] = (_cr.have[sv.type] || 0) + 1;
+              window.GameAudio.pickup();
+              this._spawnFx(sv.x, sv.y, '#5ff0ff', 8, 120, 2, true, 0.5);
+              window.Game.uiToast('Recovered ' + sv.type.replace('_', ' '));
+              PD.save();
+            }
+          }
+        }
+        if(this.state.trader && Math.hypot(this.state.trader.x - p.x, this.state.trader.y - p.y) < 60 && (needHP > 0 || needPC > 0)){
+          if(inp.pressed('KeyE')){
+            const cost = needHP * 80 + needPC * 120;
+            if(PD.credits >= cost){
+              PD.credits -= cost;
+              _cr.have.hull_plate = (_cr.have.hull_plate || 0) + needHP;
+              _cr.have.power_cell = (_cr.have.power_cell || 0) + needPC;
+              PD.save();
+              window.GameAudio.uiBuy();
+              window.Game.uiToast('Purchased repair components');
+            } else {
+              window.Game.uiToast('Insufficient credits (need ' + cost + ' CR)');
+            }
+          }
+        }
+        if(nearWreck && (needHP <= 0 && needPC <= 0)){
+          if(inp.keys.has('KeyE')){
+            if(!this.repairT) this.repairT = (_cr.progress || 0) * 6;
+            this.repairT += dt;
+            _cr.progress = Math.min(1, this.repairT / 6);
+            PD.save();
+            if(this.repairT >= 6){
+              _cr.have.hull_plate = Math.max(0, (_cr.have.hull_plate || 0) - _cr.components.hull_plate);
+              _cr.have.power_cell = Math.max(0, (_cr.have.power_cell || 0) - _cr.components.power_cell);
+              this.state.wreck.repaired = true;
+              _cr.active = false;
+              PD.hp = PD.hullMax();
+              PD.shield = PD.shieldMax();
+              PD.alive = true;
+              PD.save();
+              this.repairT = 0;
+              window.GameAudio.pickup();
+              window.Game.uiToast('SHIP REPAIRED — ready for takeoff');
+            }
+          }
+        }
+        if(nearWreck){
+          if(needHP > 0 || needPC > 0){
+            this.prompt = 'Need ' + needHP + ' Hull Plates, ' + needPC + ' Power Cells' + (this.prompt ? ' · ' + this.prompt.replace(/<\/?b>/g, '') : '');
+          } else {
+            const prog = Math.round((_cr.progress || 0) * 100);
+            this.prompt = 'Hold <b>E</b> to repair spaceship (' + prog + '%)' + (this.prompt ? ' · ' + this.prompt.replace(/<\/?b>/g, '') : '');
+          }
+        }
+      }
       // weapon switching: G cycles between owned weapons; 1/2 select directly
       if(inp.pressed('KeyG') && window.PD.weapons.length >= 2){
         const w = window.PD;
@@ -828,6 +925,33 @@
         }
         ctx.restore();
       }
+
+       // crash recovery: crashed spaceship + salvage components
+       const _cr = window.PD.crashRecovery;
+       if(_cr && _cr.active && _cr.planetIdx === window.PD.planetIndex && this.state.wreck){
+         const w = this.state.wreck;
+         if(w.x >= ox - 60 && w.x <= ox + vw + 60 && w.y >= oy - 60 && w.y <= oy + vh + 60){
+           ctx.fillStyle = 'rgba(0,0,0,0.35)';
+           ctx.beginPath(); ctx.ellipse(w.x + 6, w.y + 10, 26, 10, 0, 0, 6.283); ctx.fill();
+           ctx.fillStyle = '#ff6b6b';
+           ctx.beginPath();
+           ctx.moveTo(w.x, w.y - 14); ctx.lineTo(w.x + 16, w.y + 8); ctx.lineTo(w.x - 16, w.y + 8);
+           ctx.closePath(); ctx.fill();
+           ctx.fillStyle = '#ffd479';
+           ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+           ctx.fillText('CRASHED SHIP', w.x, w.y - 20);
+           ctx.textAlign = 'left';
+         }
+         if(this.state.salvage){
+           for(const sv of this.state.salvage){
+             if(sv.collected) continue;
+             if(sv.x < ox - 20 || sv.x > ox + vw + 20 || sv.y < oy - 20 || sv.y > oy + vh + 20) continue;
+             ctx.fillStyle = sv.type === 'hull_plate' ? '#9aa8bb' : '#5ff0ff';
+             ctx.beginPath(); ctx.arc(sv.x, sv.y, 6, 0, 6.283); ctx.fill();
+             ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+           }
+         }
+       }
 
       // aliens — segmented bodies, animated legs, glow aura, venom sac for spitters
       for(const al of this.aliens){

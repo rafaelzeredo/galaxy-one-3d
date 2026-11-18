@@ -127,6 +127,7 @@
     missionsDone: 0,
     rates: null,          // procedural market rates (rerolled per visit)
     spaceSaved: null,           // ship pos/quat while landed
+    crashRecovery: null,        // active emergency crash-recovery state (or null)
     planetIndex: 0,
     systemIdx: 0,               // active star system (index into SYSTEMS)
     playerHp: 100,              // player health on planetary surface (separate from ship hp)
@@ -326,7 +327,8 @@
           equippedWeapon: this.equippedWeapon,
           energyCells: this.energyCells,
           marketStock: this.marketStock,
-          surfaceStates: this.surfaceStates || {}
+          surfaceStates: this.surfaceStates || {},
+          crashRecovery: this.crashRecovery || null
         }));
       }catch(e){}
     },
@@ -355,6 +357,7 @@
         // Per-planet surface state (harvested/depleted nodes + regen timestamps)
         // must persist across save/load so resources regrow from the right point.
         if(s.surfaceStates && typeof s.surfaceStates === 'object') this.surfaceStates = s.surfaceStates;
+        if(s.crashRecovery && typeof s.crashRecovery === 'object') this.crashRecovery = s.crashRecovery;
       }catch(e){}
     },
     // Start a completely fresh game: reset all progression to starting values
@@ -371,6 +374,7 @@
       this.missionsDone = 0;
       this.rates = null;
       this.spaceSaved = null;
+      this.crashRecovery = null;
       this.planetIndex = 0;
       this.systemIdx = 0;
       this.playerHp = 100;

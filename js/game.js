@@ -149,6 +149,10 @@
 
     takeOff(){
       if(this.state !== 'planet') return;
+      if(window.PD.crashRecovery && window.PD.crashRecovery.active){
+        this.uiToast('SHIP DAMAGED — repair the wreck before takeoff');
+        return;
+      }
       window.GameAudio.takeoff();
       this._fade(() => {
         this._toSpace();
@@ -163,13 +167,49 @@
       window.GameAudio.bigBoom();
       this._fade(() => {
         const PD = window.PD;
-        // insurance: lose 25% cargo + 10% credits
-        for(const k in window.PD.cargo) window.PD.cargo[k] = Math.floor(window.PD.cargo[k] * 0.75);
-        window.PD.credits = Math.floor(window.PD.credits * 0.9);
-        window.PD.save();
-        window.Space.respawn();
-        this.deathHandled = false;
-        this.uiToast('SHIP REBUILT AT ORION STATION — cargo losses incurred');
+        // Emergency crash landing: find nearest landable planet in the current system.
+        const sys = PD.systemIdx | 0;
+        const candidates = window.PLANETS.map((p, i) => ({ p, i }))
+          .filter(({ p }) => ((p.sys | 0) === sys));
+        let best = null, bd = Infinity;
+        const shipPos = window.Space.ship.position;
+        for(const { p, i } of candidates){
+          const d = Math.hypot(p.x - shipPos.x, p.y - shipPos.y, p.z - shipPos.z);
+          if(d < bd){ bd = d; best = i; }
+        }
+        if(best != null){
+          // crash recovery state
+          PD.crashRecovery = {
+            active: true,
+            systemIdx: sys,
+            planetIdx: best,
+            progress: 0,
+            components: { hull_plate: 3, power_cell: 2 },
+            have: { hull_plate: 0, power_cell: 0 },
+            wreckX: null, wreckY: null,
+            salvaged: false,
+          };
+          window.Space.saveForLanding();
+          PD.planetIndex = best;
+          PD.save();
+          this.state = 'planet';
+          window.Space.exit();
+          this.els.space.classList.add('hidden');
+          this.els.hud.classList.remove('hidden');
+          this.els.cross.classList.add('hidden');
+          window.Planet.enter(best);
+          this.els.hud.style.pointerEvents = 'none';
+          this.deathHandled = false;
+          this.uiToast('CRASH LANDING on ' + window.PLANETS[best].name + ' — recover and repair your ship');
+        } else {
+          // fallback to ordinary respawn
+          for(const k in window.PD.cargo) window.PD.cargo[k] = Math.floor(window.PD.cargo[k] * 0.75);
+          window.PD.credits = Math.floor(window.PD.credits * 0.9);
+          window.PD.save();
+          window.Space.respawn();
+          this.deathHandled = false;
+          this.uiToast('SHIP REBUILT AT ORION STATION — cargo losses incurred');
+        }
       });
     },
 
@@ -685,6 +725,11 @@
       const si = pj.system | 0;
       const cur = window.PD.systemIdx | 0;
       if(si === cur){ this._renderGalaxy(); return; }
+      if(window.PD.crashRecovery && window.PD.crashRecovery.active){
+        this.uiToast('SHIP DAMAGED — repair the wreck before travel');
+        this._renderGalaxy();
+        return;
+      }
       if(!window.PD.hasModule('hyperdrive')){
         this.uiToast('✖ HYPERDRIVE REQUIRED — dock at a station to buy the module');
         this._renderGalaxy();
