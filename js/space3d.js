@@ -30,7 +30,7 @@
   const S = {
     ready: false, active: false,
     nearPlanet: -1, nearStation: false, nearStationIdx: -1, landPrompt: '',
-    stats: { speed: 0 },
+    stats: { speed: 0, thrust: 0 },
     planetMeshes: [],
     stations: [],
     empCD: 0, empPulses: [],
@@ -511,7 +511,7 @@
       if(!this.vel) this.vel = V3(0, 0, 0);
       window.PD.resetShipState();
       this.warp = null; this.warpTo = null; this.warpPrompt = '';
-      this.thrustS = 0; this.bank = 0; this.hull.rotation.z = 0;
+      this.thrustS = 1 / 3; this.bank = 0; this.hull.rotation.z = 0;
       // camera swoop: start further back and glide in for a cinematic arrival
       const back = V3(0, 3.2, 11).applyQuaternion(this.ship.quaternion);
       const swoop = V3(0, 3.2, 34).applyQuaternion(this.ship.quaternion);
@@ -587,7 +587,7 @@
       const fwdR = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
       this.vel = V3(0, 0, 0);
       this.vel.copy(fwdR).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
-      this.thrustS = 0;
+      this.thrustS = 1 / 3;
       for(const p of this.pirates) this.scene.remove(p.mesh);
       this.pirates.length = 0;
       window.PD.systemIdx = 0; // rebuilt at ORION STATION
@@ -1033,34 +1033,32 @@
       this.hull.rotation.z = this.bank;
       this.hull.rotation.x = this.warp ? 0 : Math.max(-0.25, Math.min(0.25, pitchRate * 0.12));
 
-      // thrust: direct hold-to-thrust / hold-to-brake. B held = speed increases;
-      // N held = speed decreases; releasing a key stops the change and the ship
-      // coasts at the speed reached (no persistent setting, no automatic friction).
+      // engine thrust level (0..1): persistent setting. B holds to increase the
+      // thrust level; N holds to decrease it; releasing a key holds the current
+      // level. The thrust level drives forward acceleration; velocity/momentum
+      // and drag are handled by the existing flight physics.
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
       const holdB = inp.keys.has('KeyB');
       const holdN = inp.keys.has('KeyN');
-      // smooth visual/audio throttle (0..1) — does not affect velocity persistence
-      const wantThrust = holdB ? 1 : 0;
-      this.thrustS += (wantThrust - this.thrustS) * Math.min(1, (wantThrust > this.thrustS ? 5.5 : 7) * dt);
+      if(holdB){
+        this.thrustS = Math.min(1, this.thrustS + 5.5 * dt);
+      } else if(holdN){
+        this.thrustS = Math.max(0, this.thrustS - 5.5 * dt);
+      }
       if(this.thrustS < 0.003) this.thrustS = 0;
       if(!this.warp){
-        if(holdB){
-          this.vel.addScaledVector(fwd, PD.thrust() * dt);
-        } else if(holdN){
-          const spd = this.vel.length();
-          if(spd > 0.001){
-            const nextSpd = spd - PD.thrust() * dt;
-            if(nextSpd > 0) this.vel.setLength(nextSpd);
-            else this.vel.set(0, 0, 0);
-          }
+        if(this.thrustS > 0){
+          this.vel.addScaledVector(fwd, PD.thrust() * this.thrustS * dt);
         }
-        // hard speed cap (not friction)
+        // existing physics: drag (inertia / momentum)
+        this.vel.multiplyScalar(Math.max(0, 1 - 0.25 * dt));
         const spd2 = this.vel.length(), maxS2 = PD.maxSpeed();
         if(spd2 > maxS2) this.vel.multiplyScalar(maxS2 / spd2);
       }
 
       // warp travel: accelerate hard along the corridor, brake in sync with
       // remaining distance (v²/2a), crawl the last meters to the pad
+      const wantThrust = this.thrustS;
       let thrustLevel = wantThrust;
       if(this.warp){
         if(this.warp.phase === 'run'){
@@ -1075,7 +1073,7 @@
             const arrFwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
             this.vel = V3(0, 0, 0);
             this.vel.copy(arrFwd).multiplyScalar(window.PD.maxSpeed() / 3); // default cruising speed
-            this.thrustS = 0;
+            this.thrustS = 1 / 3;
             this.ship.position.copy(this.warp.pos);
             const prevSys = window.PD.systemIdx;
             window.PD.systemIdx = window.PD.systemOf(this.warp.kind, this.warp.idx);
@@ -1103,6 +1101,7 @@
       if(spd > maxS && !this.warp) this.vel.multiplyScalar(maxS / spd);
       if(!this.warp) this.ship.position.addScaledVector(this.vel, dt);
       this.stats.speed = spd;
+      this.stats.thrust = this.thrustS;
       window.GameAudio.engine(this.warp ? 1 : 0.12 + this.thrustS * 0.85 * (spd / maxS));
       // engine flame: spools smoothly with thrust, flickers subtly at full burn
       const flameS = 0.25 + this.thrustS * 1.1 + (this.warp ? 1.2 : 0);

@@ -1169,13 +1169,13 @@
           const shBar = document.getElementById('sh-bar');
           if(shTxt) shTxt.textContent = sm ? Math.ceil(window.PD.shield) + '/' + sm : '—';
           if(shBar) shBar.style.width = sm ? (100 * window.PD.shield / sm) + '%' : '0%';
-          const spd = this.state === 'space' ? window.Space.stats.speed : 0;
+          const thr = this.state === 'space' ? (window.Space.stats.thrust || 0) : 0;
           const spdTxt = document.getElementById('spd-txt');
           const spdBar = document.getElementById('spd-bar');
           const spdLbl = document.getElementById('spd-lbl');
-          if(spdTxt) spdTxt.textContent = Math.round(spd) + ' u/s';
-          if(spdBar) spdBar.style.width = (100 * spd / window.PD.maxSpeed()) + '%';
-          if(spdLbl) spdLbl.textContent = this.state === 'space' ? 'SPEED ' : 'PLANET ';
+          if(spdTxt) spdTxt.textContent = Math.round(thr * 100) + '%';
+          if(spdBar) spdBar.style.width = (100 * thr) + '%';
+          if(spdLbl) spdLbl.textContent = this.state === 'space' ? 'THRUST ' : 'PLANET ';
         }
       }
       document.getElementById('cargo-lines').textContent = this._fmtCargo();
