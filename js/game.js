@@ -84,7 +84,7 @@
       this.input = inp;
       window.addEventListener('keydown', e => {
         const c = e.code;
-        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab','KeyB','KeyN','KeyM'].indexOf(c) >= 0) e.preventDefault();
+        if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD','KeyE','KeyR','KeyH','KeyQ','KeyG','Tab','KeyB','KeyN','KeyM','KeyF'].indexOf(c) >= 0) e.preventDefault();
         window.GameAudio.init(); window.GameAudio.resume();
         if(!inp.keys.has(c)) inp.pressedCodes.add(c);
         inp.keys.add(c);
@@ -355,10 +355,13 @@
       const PD = window.PD;
       if(!PD.marketStock[marketKey]){
         const isStation = marketKey === 'station';
-        const stock = { energyCells: 0, weapons: {} };
+        const stock = { energyCells: 0, missiles: 0, weapons: {} };
         stock.energyCells = isStation
           ? (5 + Math.floor(Math.random() * 10))
           : (Math.random() < 0.5 ? (3 + Math.floor(Math.random() * 6)) : 0);
+        stock.missiles = isStation
+          ? (3 + Math.floor(Math.random() * 6))
+          : (Math.random() < 0.4 ? (1 + Math.floor(Math.random() * 4)) : 0);
         for(const wk in window.WEAPON_DEFS){
           if(!PD.hasWeapon(wk) && (isStation || Math.random() < 0.3)){
             stock.weapons[wk] = 1;
@@ -1020,6 +1023,34 @@
           this._renderStation();
         }, false);
       }
+      // ship gear: missiles (consumable ammunition)
+      const sg = document.createElement('div');
+      sg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">SHIP GEAR</div>';
+      m.appendChild(sg);
+      if(stock.missiles > 0){
+        this._row(m, 'Missiles', 'homing missile ammunition · ' + stock.missiles + ' in stock', '60 CR', 'BUY', () => {
+          if(PD.credits < 60) return;
+          PD.credits -= 60;
+          PD.missiles++;
+          stock.missiles--;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Missiles', 'homing missile ammunition · out of stock', '60 CR', '—', () => {}, true);
+      }
+      if(PD.missiles > 0){
+        this._row(m, 'Sell Missiles', 'sell all missiles · refund 25 CR each', PD.missiles + ' × 25 CR', 'SELL', () => {
+          const refund = PD.missiles * 25;
+          PD.credits += refund;
+          PD.missiles = 0;
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold missiles · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
+      }
       // weapons for sale / sell
       for(const wk in window.WEAPON_DEFS){
         const wd = window.WEAPON_DEFS[wk];
@@ -1253,6 +1284,12 @@
           if(spdTxt) spdTxt.textContent = Math.round(thr * 100) + '%';
           if(spdBar) spdBar.style.width = (100 * thr) + '%';
           if(spdLbl) spdLbl.textContent = this.state === 'space' ? 'THRUST ' : 'PLANET ';
+          // missile count (only when Homing Missile System installed)
+          const mslEl = document.getElementById('msl-label');
+          const mslTxt = document.getElementById('msl-txt');
+          const hasMsl = window.PD && window.PD.hasModule && window.PD.hasModule('missiles');
+          if(mslEl) mslEl.style.display = (this.state === 'space' && hasMsl) ? '' : 'none';
+          if(mslTxt) mslTxt.textContent = hasMsl ? (window.PD.missiles | 0) : '';
         }
       }
       document.getElementById('cargo-lines').textContent = this._fmtCargo();

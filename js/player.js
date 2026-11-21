@@ -35,10 +35,10 @@
   // stored in a limited module hold. Effects read via PD.installed.
   const MODULE_DEFS = {
     cargo:     { name: 'Cargo Pod',        desc: '+20 hold capacity',      cost: 350 },
-    retrieval: { name: 'Retrieval Beam',   desc: 'huge ore magnet radius', cost: 280 },
+    retrieval: { name: 'Magnetic Mining', desc: 'huge ore magnet radius', cost: 280 },
     passenger: { name: 'Passenger Module', desc: 'unlocks ferry missions', cost: 320 },
     emp:       { name: 'EMP Emitter',      desc: 'non-lethal pirate disable [F]', cost: 480 },
-    weapon:    { name: 'Turret Array',     desc: '+6 laser damage',        cost: 520 },
+    missiles:  { name: 'Homing Missile System', desc: 'enables missile fire (ammo sold separately)', cost: 520 },
     hyperdrive:{ name: 'Hyperdrive',       desc: 'jump to another star system', cost: 800 }
   };
 
@@ -135,6 +135,7 @@
     weapons: [],                // owned planetary weapon keys
     equippedWeapon: null,       // currently equipped weapon key
     energyCells: 0,             // shared ammunition for ranged weapons
+    missiles: 0,                // ammunition for the Homing Missile System
     marketStock: {},            // per-market weapon/ammo stock: { [marketKey]: { energyCells: n, weapons: { key: qty } } }
     alive: true,
 
@@ -144,7 +145,7 @@
     // modules and shield regeneration. Alien attacks reduce playerHp, never
     // ship Hull or Shield.
     playerHpMax(){ return 100; },
-    laserDmg(){ return 8 + this.up.weapon * 6 + (this.installed.indexOf('weapon') >= 0 ? 6 : 0); },
+    laserDmg(){ return 8 + this.up.weapon * 6; },
     fireDelay(){ return Math.max(0.09, 0.3 - this.up.weapon * 0.04); },
     thrust(){ return 34 + this.up.engine * 16; },
     maxSpeed(){ return 70 + this.up.engine * 26; },
@@ -327,6 +328,7 @@
           weapons: this.weapons,
           equippedWeapon: this.equippedWeapon,
           energyCells: this.energyCells,
+          missiles: this.missiles,
           marketStock: this.marketStock,
           surfaceStates: this.surfaceStates || {},
           crashRecovery: this.crashRecovery || null,
@@ -343,8 +345,8 @@
         if(s.cargo) for(const k in this.cargo) this.cargo[k] = s.cargo[k] | 0;
         if(s.trade) for(const k in this.trade) this.trade[k] = s.trade[k] | 0;
         if(s.up) for(const k in this.up) this.up[k] = s.up[k] || 1;
-        if(Array.isArray(s.installed)) this.installed = s.installed.filter(k => MODULE_DEFS[k]).slice(0, MODULE_SLOTS);
-        if(Array.isArray(s.modules)) this.modules = s.modules.filter(k => MODULE_DEFS[k]).slice(0, MODULE_STORE_CAP);
+        if(Array.isArray(s.installed)) this.installed = s.installed.map(k => k === 'weapon' ? 'missiles' : k).filter(k => MODULE_DEFS[k]).slice(0, MODULE_SLOTS);
+        if(Array.isArray(s.modules)) this.modules = s.modules.map(k => k === 'weapon' ? 'missiles' : k).filter(k => MODULE_DEFS[k]).slice(0, MODULE_STORE_CAP);
         if(Array.isArray(s.missions)) this.missions = s.missions.slice(0, 3);
         this.missionsDone = s.missionsDone | 0;
         // Backward compatibility: saves written before Stage A have no systemIdx,
@@ -355,6 +357,7 @@
         if(Array.isArray(s.weapons)) this.weapons = s.weapons.filter(k => WEAPON_DEFS[k]);
         this.equippedWeapon = s.equippedWeapon != null && this.hasWeapon(s.equippedWeapon) ? s.equippedWeapon : null;
         this.energyCells = s.energyCells != null ? s.energyCells | 0 : 0;
+        this.missiles = s.missiles != null ? s.missiles | 0 : 0;
         if(s.marketStock && typeof s.marketStock === 'object') this.marketStock = s.marketStock;
         // Per-planet surface state (harvested/depleted nodes + regen timestamps)
         // must persist across save/load so resources regrow from the right point.
@@ -385,6 +388,7 @@
       this.weapons = [];
       this.equippedWeapon = null;
       this.energyCells = 0;
+      this.missiles = 0;
       this.marketStock = {};
       // clear per-planet surface state so no harvested nodes or aliens persist
       if(this.surfaceStates){

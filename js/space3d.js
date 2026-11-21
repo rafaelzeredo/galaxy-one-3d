@@ -71,6 +71,7 @@
       this.asteroids = [];
       this.pirates = [];
       this.lasers = [];
+      this.missiles3d = [];
       this.oreDrops = [];
       this.parts = [];
       this.fireTimer = 0; this.wing = 0;
@@ -85,6 +86,7 @@
       this.lockT = 0;         // seconds held on current target
       this.lockNeed = 3;      // current lock time from scanner level
       this.locked = false;    // true once lockT >= lockNeed
+      this.lockedTarget = null; // pirate entity currently locked (for missiles)
       // quick travel (warp) state
       this.warpTo = null;     // { pos, name, kind, idx } once a target is fully scanned
       this.warpPrompt = '';
@@ -652,7 +654,7 @@
         if(d < r + 6 && d < hd){ hd = d; hover = t; }
       }
       if(hover){
-        if(this.hoverId !== hover.id){ this.hoverId = hover.id; this.lockT = 0; this.locked = false; }
+        if(this.hoverId !== hover.id){ this.hoverId = hover.id; this.lockT = 0; this.locked = false; this.lockedTarget = null; }
         this.hover = hover;
         this.lockNeed = window.PD.scannerLockTime();
         if(!this.locked){
@@ -660,6 +662,9 @@
           if(this.lockT >= this.lockNeed){
             this.locked = true;
             window.GameAudio.lock();
+            if(hover.type === 'pirate'){
+              this.lockedTarget = this.pirates[parseInt(hover.id.slice(1), 10)] || null;
+            }
           }
         }
         // fully scanned planet/station => quick travel target
@@ -683,7 +688,7 @@
           this.warpPrompt = '';
         }
       } else {
-        this.hover = null; this.hoverId = null; this.lockT = 0; this.locked = false;
+        this.hover = null; this.hoverId = null; this.lockT = 0; this.locked = false; this.lockedTarget = null;
         this.warpTo = null; this.warpPrompt = '';
       }
     },
@@ -727,6 +732,32 @@
       mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -3.4 : 3.4).addScaledVector(dir, 2);
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), dir);
       this.lasers.push({ mesh, vel: dir.clone().multiplyScalar(700), dmg, life: 1.6, mine: true });
+      this.scene.add(mesh);
+      window.GameAudio.laser();
+    },
+
+    _launchMissile(target){
+      const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
+      const right = V3(1, 0, 0).applyQuaternion(this.ship.quaternion);
+      const mesh = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 8),
+        new THREE.MeshStandardMaterial({ color: 0xff8a3d, metalness: 0.6, roughness: 0.3, emissive: 0x552200 }));
+      body.rotation.x = Math.PI / 2;
+      mesh.add(body);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffcc66, emissive: 0x663300 }));
+      nose.rotation.x = -Math.PI / 2;
+      nose.position.z = -2.7;
+      mesh.add(nose);
+      const exhaust = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.6, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: 0.85 }));
+      exhaust.rotation.x = Math.PI / 2;
+      exhaust.position.z = 2.8;
+      mesh.add(exhaust);
+      mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -2.0 : 2.0).addScaledVector(fwd, 3);
+      mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), fwd);
+      const vel = fwd.clone().multiplyScalar(180);
+      this.missiles3d.push({ mesh, vel, target: target || null, life: 4.0, hit: false, trail: [] });
       this.scene.add(mesh);
       window.GameAudio.laser();
     },
@@ -893,6 +924,7 @@
 
     // Single destruction path so bounty, hooks and cleanup never diverge.
     _killPirate(e){
+      if(this.lockedTarget === e) this.lockedTarget = null;
       this._spawnExplosion(e.mesh.position, true);
       window.GameAudio.bigBoom();
       const PD = window.PD;
@@ -1207,6 +1239,13 @@
         }
       }
 
+      // missiles (F): one launch per key press
+      if(!this.warp && inp.pressed('KeyF') && PD.hasModule('missiles') && PD.missiles > 0){
+        PD.missiles--;
+        PD.save();
+        this._launchMissile(this.lockedTarget);
+      }
+
       // lasers
       for(let i = this.lasers.length - 1; i >= 0; i--){
         const l = this.lasers[i];
@@ -1271,6 +1310,86 @@
             this.scene.remove(l.mesh);
             this.lasers.splice(i, 1);
           }
+        }
+      }
+
+      // missiles
+      for(let i = this.missiles3d.length - 1; i >= 0; i--){
+        const ms = this.missiles3d[i];
+        ms.life -= dt;
+        // homing
+        let tgt = ms.target;
+        if(tgt && !this.pirates.includes(tgt)) tgt = null; // target destroyed
+        if(tgt){
+          const toT = tgt.mesh.position.clone().sub(ms.mesh.position);
+          const dist = toT.length();
+          if(dist > 0.1){
+            const desired = toT.normalize();
+            const cur = ms.vel.clone().normalize();
+            const ang = cur.angleTo(desired);
+            const turn = Math.min(ang, 2.6 * dt);
+            if(turn > 0.0001){
+              const axis = new THREE.Vector3().crossVectors(cur, desired);
+              if(axis.length() > 0.001){
+                axis.normalize();
+                ms.vel.applyAxisAngle(axis, turn);
+              }
+            }
+          }
+        }
+        // accelerate
+        const spd = ms.vel.length();
+        ms.vel.setLength(Math.min(420, spd + 220 * dt));
+        ms.mesh.position.addScaledVector(ms.vel, dt);
+        ms.mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), ms.vel.clone().normalize());
+        if(ms.life <= 0){ this.scene.remove(ms.mesh); this.missiles3d.splice(i, 1); continue; }
+        // collisions
+        let hit = false;
+        // planets
+        for(const pm of this.planetMeshes){
+          const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
+          const def = window.PLANETS[idx];
+          if(!def) continue;
+          if(ms.mesh.position.distanceTo(pm.position) < def.size + 2){ hit = true; break; }
+        }
+        // asteroids
+        if(!hit){
+          for(let a = this.asteroids.length - 1; a >= 0; a--){
+            const ast = this.asteroids[a];
+            const cr = ast.cr != null ? ast.cr : ast.r * 1.15;
+            if(ms.mesh.position.distanceTo(ast.mesh.position) < cr + 2){
+              // destroy asteroid + ore
+              this._spawnExplosion(ast.mesh.position, false);
+              window.GameAudio.boom();
+              this.scene.remove(ast.mesh);
+              const drops = 2 + Math.floor(Math.random() * 2);
+              for(let d = 0; d < drops; d++){
+                const ore = new THREE.Mesh(this.oreGeo, new THREE.MeshBasicMaterial({ color: 0x9ad2ff }));
+                ore.position.copy(ast.mesh.position).add(V3((Math.random()-0.5)*6, (Math.random()-0.5)*6, (Math.random()-0.5)*6));
+                this.oreDrops.push({ mesh: ore, vel: V3((Math.random()-0.5)*12, (Math.random()-0.5)*12, (Math.random()-0.5)*12), life: 30 });
+                this.scene.add(ore);
+              }
+              this.asteroids.splice(a, 1);
+              hit = true; break;
+            }
+          }
+        }
+        // pirates
+        if(!hit){
+          for(const e of this.pirates){
+            if(ms.mesh.position.distanceTo(e.mesh.position) < 6){
+              e.hp -= 60;
+              this._hit(ms.mesh.position);
+              if(e.hp <= 0) this._killPirate(e);
+              hit = true; break;
+            }
+          }
+        }
+        if(hit){
+          this._spawnExplosion(ms.mesh.position, true);
+          window.GameAudio.boom();
+          this.scene.remove(ms.mesh);
+          this.missiles3d.splice(i, 1);
         }
       }
 

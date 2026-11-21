@@ -74,6 +74,7 @@ function bootSpace(){
   S.stats = { speed: 0 };
   S.thrustS = 0; S.bank = 0; S.shake = 0; S.empCD = 0; S.empPulses = [];
   S.lasers = []; S.oreDrops = []; S.parts = []; S.pirates = []; S.asteroids = [];
+  S.missiles3d = [];
   S.stations = []; S.planetMeshes = []; S.nebula = null;
   S.fireTimer = 0; S.wing = 0; S.shieldDelay = 0; S.lockT = 0; S.locked = false;
   S.hover = null; S.hoverId = null; S.lockNeed = 3;
@@ -135,7 +136,7 @@ test('flight controls source: engine thrust via B / N throttle, W/S are pitch-on
 test('flight throttle keys B / N are preventDefault-ed so they cannot trigger browser shortcuts', () => {
   // B/N are added to the preventDefault key list so they never leak into unwanted
   // browser/OS shortcuts while flying. M keeps its mute/unmute handling.
-  assert.ok(/'Tab','KeyB','KeyN','KeyM'\]/.test(gameSrc), 'B/N/M added to the preventDefault key list');
+  assert.ok(/'Tab','KeyB','KeyN','KeyM','KeyF'\]/.test(gameSrc), 'B/N/M/F added to the preventDefault key list');
 });
 
 test('releasing directional keys stops rotation (keyup clears, blur clears)', () => {
