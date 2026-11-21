@@ -364,6 +364,12 @@
         if(s.surfaceStates && typeof s.surfaceStates === 'object') this.surfaceStates = s.surfaceStates;
         if(s.crashRecovery && typeof s.crashRecovery === 'object') this.crashRecovery = s.crashRecovery;
         if(s.missionBoards && typeof s.missionBoards === 'object') this.missionBoards = s.missionBoards;
+        // Invalidate old mission boards (pre-6-mission format) to force regeneration
+        for(const k in this.missionBoards){
+          if(Array.isArray(this.missionBoards[k]) && this.missionBoards[k].length < 6){
+            delete this.missionBoards[k];
+          }
+        }
       }catch(e){}
     },
     // Start a completely fresh game: reset all progression to starting values
