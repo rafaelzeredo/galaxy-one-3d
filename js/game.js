@@ -409,6 +409,19 @@
       return list;
     },
 
+    // ---------- missions: procedural NPC board + completion engine ----------
+    _mDestBodies(excludeStationIdx){
+      const list = [];
+      for(let i = 0; i < window.STATIONS.length; i++){
+        if(i === excludeStationIdx) continue;
+        list.push({ kind: 'station', idx: i, name: window.STATIONS[i].name });
+      }
+      for(const i of [0, 1, 4]){ // market-bearing outposts
+        list.push({ kind: 'planet', idx: i, name: window.PLANETS[i].name });
+      }
+      return list;
+    },
+
     _genNpcs(){
       const PD = window.PD;
       const firsts = ['Ryn', 'Kova', 'Dax', 'Mira', 'Olek', 'Sela', 'Brann', 'Talia', 'Juno', 'Corr'];
@@ -437,7 +450,21 @@
           m = { type, dest,
             label: 'Ferry a passenger → ' + dest.name,
             desc: '"Get me (and my cargo of grievances) to ' + dest.name + ' in one piece, pilot."',
-            reward: 250 + rnd(0, 8) * 25 };
+            reward: 250 + rnd(0, 8) * 25,
+            // ambush data: will be populated when mission is accepted and system entered
+            ambushPirate: null,
+            ambushGenerated: false
+          };
+        } else if(type === 'defence'){
+          const need = rnd(3, 5);
+          m = { type, need, have: 0, dest: null,
+            label: 'System Defence — destroy ' + need + ' pirate ships',
+            desc: 'Protect the ' + dest.name + ' solar system from a pirate attack.',
+            reward: need * 140,
+            // defence data
+            pirates: [],       // will hold mission-specific pirate references
+            piratesGenerated: false
+          };
         } else if(type === 'hunt'){
           const need = rnd(2, 4);
           m = { type, need, have: 0, dest: null,
@@ -457,8 +484,9 @@
       const nameOf = () => pick(firsts) + ' ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + '.';
       const roleOf = () => pick(roles);
       const acceptedIds = new Set((PD.missions || []).map(m => m.id));
-      const t0 = 'delivery';
+      let t0 = 'delivery';
       let t1 = pick(types), t2 = pick(types);
+      let t3 = pick(types), t4 = pick(types), t5 = pick(types);
       // avoid offering missions already accepted by the player
       let tries = 0;
       while(acceptedIds.has(t0 + '-' + this.visitN + '-0') && tries++ < 5) t0 = pick(types);
@@ -466,8 +494,14 @@
       while(acceptedIds.has(t1 + '-' + this.visitN + '-1') && tries++ < 5) t1 = pick(types);
       tries = 0;
       while(acceptedIds.has(t2 + '-' + this.visitN + '-2') && tries++ < 5) t2 = pick(types);
-      const slots = [[t0], [t1], [t2]];
-      for(let i = 0; i < 3; i++){
+      tries = 0;
+      while(acceptedIds.has(t3 + '-' + this.visitN + '-3') && tries++ < 5) t3 = pick(types);
+      tries = 0;
+      while(acceptedIds.has(t4 + '-' + this.visitN + '-4') && tries++ < 5) t4 = pick(types);
+      tries = 0;
+      while(acceptedIds.has(t5 + '-' + this.visitN + '-5') && tries++ < 5) t5 = pick(types);
+      const slots = [[t0], [t1], [t2], [t3], [t4], [t5]];
+      for(let i = 0; i < 6; i++){
         const name = nameOf(), role = roleOf();
         let m = rollMission(slots[i][0], i);
         let r = 0;
@@ -528,7 +562,14 @@
           ? 'carrying ' + Math.min(PD.trade[mi.good] | 0, mi.qty) + '/' + mi.qty + ' ' + window.TRADE_GOODS[mi.good].name
           : mi.type === 'passenger' ? 'ferry to ' + mi.dest.name
           : (mi.have | 0) + '/' + mi.need;
-        this._row(m, mi.label, 'reward ' + mi.reward + ' CR · ' + prog, '', 'ABANDON', () => {
+        // Add ambush/system defence progress display
+        let extra = '';
+        if(mi.type === 'passenger' && mi.ambushGenerated){
+          extra = mi.ambushCompleted ? ' — Ambush cleared' : ' — Ambush active';
+        } else if(mi.type === 'defence' && mi.piratesGenerated){
+          extra = ' — ' + (mi.have | 0) + '/' + mi.need + ' destroyed';
+        }
+        this._row(m, mi.label, 'reward ' + mi.reward + ' CR · ' + prog + extra, '', 'ABANDON', () => {
           PD.missions.splice(i, 1);
           window.GameAudio.uiClick();
           PD.save();
@@ -547,13 +588,43 @@
         if(this._nearBody(mi.dest)){
           if(mi.type === 'delivery'){
             if((PD.trade[mi.good] | 0) >= mi.qty){
-              PD.trade[mi.good] -= mi.qty;
-              PD.credits += mi.reward;
-              this._missionDone(mi);
+              // Passenger Transport: check ambush objective first
+              if(mi.ambushGenerated && !mi.ambushCompleted){
+                // ambush not yet completed - cannot deliver passenger yet
+                // but we still award reward and complete if pirate already dead
+                if(mi.ambushPirate && !S.pirates.includes(mi.ambushPirate)){
+                  mi.ambushCompleted = true;
+                  PD.credits += mi.reward;
+                  this._missionDone(mi);
+                }
+              } else if(!mi.ambushGenerated || mi.ambushCompleted){
+                // ambush either not generated or already completed - award reward
+                PD.trade[mi.good] -= mi.qty;
+                PD.credits += mi.reward;
+                this._missionDone(mi);
+              }
             }
           } else if(mi.type === 'passenger'){
+            // Passenger Transport: award reward (ambush state handled above)
             PD.credits += mi.reward;
             this._missionDone(mi);
+          } else if(mi.type === 'defence'){
+            // System Defence: check if all mission pirates are destroyed
+            if(mi.piratesGenerated){
+              let allDestroyed = true;
+              for(const pir of mi.pirates){
+                // Check if this pirate still exists in the game
+                const found = S.pirates.find(p => p && p.mesh && p.id === pir.id);
+                if(!found || found.hp > 0){
+                  allDestroyed = false;
+                  break;
+                }
+              }
+              if(allDestroyed){
+                PD.credits += mi.reward;
+                this._missionDone(mi);
+              }
+            }
           }
         }
       }
@@ -576,6 +647,13 @@
       window.GameAudio.coin();
       this.uiToast('✔ CONTRACT COMPLETE — +' + mi.reward + ' CR (' + mi.label + ')');
       PD.save();
+      // Clean up mission-specific data
+      if(mi.type === 'passenger'){
+        // ambush state is now complete, no further action needed
+      } else if(mi.type === 'defence'){
+        // pirates array can be cleared
+        mi.pirates = [];
+      }
     },
     onPirateKill(){
       for(const mi of window.PD.missions){
@@ -1012,6 +1090,31 @@
         }, false);
       } else {
         this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
+      }
+      // laser pistol
+      if(stock.weapons && stock.weapons.laserpistol){
+        this._row(m, 'Laser Pistol', stock.weapons.laserpistol.desc + ' · dmg ' + stock.weapons.laserpistol.dmg, stock.weapons.laserpistol.cost + ' CR', 'BUY', () => {
+          if(PD.credits < stock.weapons.laserpistol.cost) return;
+          PD.credits -= stock.weapons.laserpistol.cost;
+          PD.hasWeapon('laserpistol') ? '' : PD.weapons.push('laserpistol');
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Laser Pistol', 'out of stock', '—', '—', () => {}, true);
+      }
+      // assault rifle
+      if(stock.weapons && stock.weapons.assaultrifle){
+        this._row(m, 'Assault Rifle', stock.weapons.assaultrifle.desc + ' · dmg ' + stock.weapons.assaultrifle.dmg, stock.weapons.assaultrifle.cost + ' CR', 'BUY', () => {
+          if(PD.credits < stock.weapons.assaultrifle.cost) return;
+          PD.hasWeapon('assaultrifle') ? '' : PD.weapons.push('assaultrifle');
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Assault Rifle', 'out of stock', '—', '—', () => {}, true);
       }
       // sell energy cells
       if(PD.energyCells > 0){
