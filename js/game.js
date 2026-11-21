@@ -1091,31 +1091,6 @@
       } else {
         this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
       }
-      // laser pistol
-      if(stock.weapons && stock.weapons.laserpistol){
-        this._row(m, 'Laser Pistol', stock.weapons.laserpistol.desc + ' · dmg ' + stock.weapons.laserpistol.dmg, stock.weapons.laserpistol.cost + ' CR', 'BUY', () => {
-          if(PD.credits < stock.weapons.laserpistol.cost) return;
-          PD.credits -= stock.weapons.laserpistol.cost;
-          PD.hasWeapon('laserpistol') ? '' : PD.weapons.push('laserpistol');
-          window.GameAudio.uiBuy();
-          window.PD.save();
-          this._renderStation();
-        }, false);
-      } else {
-        this._row(m, 'Laser Pistol', 'out of stock', '—', '—', () => {}, true);
-      }
-      // assault rifle
-      if(stock.weapons && stock.weapons.assaultrifle){
-        this._row(m, 'Assault Rifle', stock.weapons.assaultrifle.desc + ' · dmg ' + stock.weapons.assaultrifle.dmg, stock.weapons.assaultrifle.cost + ' CR', 'BUY', () => {
-          if(PD.credits < stock.weapons.assaultrifle.cost) return;
-          PD.hasWeapon('assaultrifle') ? '' : PD.weapons.push('assaultrifle');
-          window.GameAudio.uiBuy();
-          window.PD.save();
-          this._renderStation();
-        }, false);
-      } else {
-        this._row(m, 'Assault Rifle', 'out of stock', '—', '—', () => {}, true);
-      }
       // sell energy cells
       if(PD.energyCells > 0){
         this._row(m, 'Sell Pulse Rounds', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
