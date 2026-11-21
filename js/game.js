@@ -124,6 +124,8 @@
       this.els.hud.style.pointerEvents = 'none';
       // ensure only the current system's bodies exist in the active world
       window.Space.syncWorld();
+      // spawn mission-specific encounters for the current system
+      if(window.Space._spawnMissionEncounters) window.Space._spawnMissionEncounters();
     },
 
     landOn(planetIdx){
@@ -431,6 +433,7 @@
       const types = ['delivery', 'hunt'];
       if(PD.hasModule('emp')) types.push('emp');
       if(PD.hasModule('passenger')) types.push('passenger');
+      if(PD.hasModule('hyperdrive')) types.push('defence');
       const dests = this._mDestBodies(this.stationIdx);
       this._npcs = [];
       const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -453,17 +456,27 @@
             reward: 250 + rnd(0, 8) * 25,
             // ambush data: will be populated when mission is accepted and system entered
             ambushPirate: null,
-            ambushGenerated: false
+            ambushGenerated: false,
+            ambushCompleted: false,
+            destSystem: dest ? (dest.kind === 'station' ? window.STATIONS[dest.idx].sys : window.PLANETS[dest.idx].sys) : null
           };
         } else if(type === 'defence'){
           const need = rnd(3, 5);
-          m = { type, need, have: 0, dest: null,
-            label: 'System Defence — destroy ' + need + ' pirate ships',
-            desc: 'Protect the ' + dest.name + ' solar system from a pirate attack.',
+          // Pick a destination in a different system
+          const curSys = PD.systemIdx | 0;
+          const otherDests = dests.filter(d => {
+            const body = d.kind === 'station' ? window.STATIONS[d.idx] : window.PLANETS[d.idx];
+            return body && (body.sys | 0) !== curSys;
+          });
+          const dest = otherDests.length ? pick(otherDests) : pick(dests);
+          m = { type, need, have: 0, dest,
+            label: 'System Defence — destroy ' + need + ' pirate ships in ' + dest.name.split(' ')[0],
+            desc: 'Travel to ' + dest.name + ' and eliminate ' + need + ' Void Raiders threatening the system. (Requires Hyperdrive)',
             reward: need * 140,
             // defence data
             pirates: [],       // will hold mission-specific pirate references
-            piratesGenerated: false
+            piratesGenerated: false,
+            destSystem: dest ? (dest.kind === 'station' ? window.STATIONS[dest.idx].sys : window.PLANETS[dest.idx].sys) : null
           };
         } else if(type === 'hunt'){
           const need = rnd(2, 4);
@@ -567,7 +580,8 @@
         if(mi.type === 'passenger' && mi.ambushGenerated){
           extra = mi.ambushCompleted ? ' — Ambush cleared' : ' — Ambush active';
         } else if(mi.type === 'defence' && mi.piratesGenerated){
-          extra = ' — ' + (mi.have | 0) + '/' + mi.need + ' destroyed';
+          const alive = (window.Space && window.Space.pirates) ? window.Space.pirates.filter(p => p && p.missionId === mi.id).length : 0;
+          extra = ' — ' + (mi.need - alive) + '/' + mi.need + ' destroyed';
         }
         this._row(m, mi.label, 'reward ' + mi.reward + ' CR · ' + prog + extra, '', 'ABANDON', () => {
           PD.missions.splice(i, 1);
@@ -584,6 +598,29 @@
       if(!PD.missions.length) return;
       for(let i = PD.missions.length - 1; i >= 0; i--){
         const mi = PD.missions[i];
+        if(mi.type === 'defence'){
+          // System Defence: complete when all mission pirates are destroyed
+          if(mi.piratesGenerated){
+            let allDestroyed = true;
+            for(const pir of mi.pirates){
+              const found = S.pirates.find(p => p && p.missionId === mi.id);
+              if(found){
+                allDestroyed = false;
+                break;
+              }
+            }
+            // Also check if any mission pirates are still alive
+            const aliveMissionPirates = S.pirates.filter(p => p && p.missionId === mi.id);
+            if(aliveMissionPirates.length > 0){
+              allDestroyed = false;
+            }
+            if(allDestroyed && mi.pirates.length > 0){
+              PD.credits += mi.reward;
+              this._missionDone(mi);
+            }
+          }
+          continue;
+        }
         if(!mi.dest) continue; // kill/disable missions complete via events
         if(this._nearBody(mi.dest)){
           if(mi.type === 'delivery'){
@@ -606,24 +643,10 @@
             }
           } else if(mi.type === 'passenger'){
             // Passenger Transport: award reward (ambush state handled above)
-            PD.credits += mi.reward;
-            this._missionDone(mi);
-          } else if(mi.type === 'defence'){
-            // System Defence: check if all mission pirates are destroyed
-            if(mi.piratesGenerated){
-              let allDestroyed = true;
-              for(const pir of mi.pirates){
-                // Check if this pirate still exists in the game
-                const found = S.pirates.find(p => p && p.mesh && p.id === pir.id);
-                if(!found || found.hp > 0){
-                  allDestroyed = false;
-                  break;
-                }
-              }
-              if(allDestroyed){
-                PD.credits += mi.reward;
-                this._missionDone(mi);
-              }
+            // But only if ambush is completed or not generated
+            if(!mi.ambushGenerated || mi.ambushCompleted){
+              PD.credits += mi.reward;
+              this._missionDone(mi);
             }
           }
         }

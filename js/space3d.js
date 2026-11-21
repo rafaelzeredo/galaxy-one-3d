@@ -888,6 +888,80 @@
       return pool[pool.length - 1];
     },
 
+    _spawnMissionEncounters(){
+      const PD = window.PD;
+      const missions = PD.missions || [];
+      const curSys = PD.systemIdx | 0;
+      for(const mi of missions){
+        if(mi.type === 'passenger'){
+          // Passenger Transport ambush: one Void Raider at destination
+          const destSys = mi.destSystem != null ? mi.destSystem : (mi.dest ? (mi.dest.kind === 'station' ? window.STATIONS[mi.dest.idx].sys : window.PLANETS[mi.dest.idx].sys) : null);
+          if(destSys !== curSys) continue;
+          if(mi.ambushGenerated && mi.ambushCompleted) continue;
+          if(mi.ambushGenerated){
+            // Check if the ambush pirate is still alive
+            const found = this.pirates.find(p => p && p.missionId === mi.id);
+            if(!found && !mi.ambushCompleted){
+              // Pirate was destroyed or not spawned - check if it was destroyed
+              if(mi.ambushPirate && mi.ambushPirate.hp <= 0){
+                mi.ambushCompleted = true;
+                PD.save();
+              } else {
+                // Re-spawn the pirate
+                const p = this._spawnPirate();
+                if(p){
+                  p.missionId = mi.id;
+                  mi.ambushPirate = p;
+                  PD.save();
+                }
+              }
+            }
+          } else {
+            // First time spawning
+            const p = this._spawnPirate();
+            if(p){
+              p.missionId = mi.id;
+              mi.ambushPirate = p;
+              mi.ambushGenerated = true;
+              mi.ambushCompleted = false;
+              PD.save();
+            }
+          }
+        } else if(mi.type === 'defence'){
+          // System Defence: 3-5 Void Raiders
+          const destSys = mi.destSystem != null ? mi.destSystem : null;
+          if(destSys !== curSys) continue;
+          if(mi.piratesGenerated){
+            // Check how many mission pirates are still alive
+            const missionPirates = this.pirates.filter(p => p && p.missionId === mi.id);
+            const expectedCount = mi.need || 3;
+            if(missionPirates.length < expectedCount && (mi.have || 0) < expectedCount){
+              // Some pirates are missing - re-spawn the missing ones
+              const missing = expectedCount - missionPirates.length;
+              for(let i = 0; i < missing; i++){
+                const p = this._spawnPirate();
+                if(p){
+                  p.missionId = mi.id;
+                }
+              }
+              PD.save();
+            }
+          } else {
+            // First time spawning
+            const need = mi.need || 3;
+            for(let i = 0; i < need; i++){
+              const p = this._spawnPirate();
+              if(p){
+                p.missionId = mi.id;
+              }
+            }
+            mi.piratesGenerated = true;
+            PD.save();
+          }
+        }
+      }
+    },
+
     _spawnPirate(typeKey){
       if(this.pirates.length >= 4) return;
       const type = (typeKey && PIRATE_TYPES.find(t => t.key === typeKey)) || this._pickPirateType();
@@ -911,6 +985,7 @@
       const dir = V3(Math.random() - 0.5, Math.random() * 0.4, Math.random() - 0.5).normalize();
       grp.position.copy(this.ship.position).addScaledVector(dir, 420);
       const p = { mesh: grp, type,
+        id: 'pirate-' + this.pirates.length + '-' + Date.now(),
         hp: type.hp[0] + Math.random() * (type.hp[1] - type.hp[0]),
         fireT: 1 + Math.random(), vel: V3(0,0,0), bank: 0, seed: Math.random() * 9,
         beacon, halo, tail, plight };
@@ -937,6 +1012,23 @@
       this.scene.remove(e.mesh);
       const idx = this.pirates.indexOf(e);
       if(idx >= 0) this.pirates.splice(idx, 1);
+      // Update mission progress for mission-specific pirates
+      if(e.missionId){
+        for(const mi of (PD.missions || [])){
+          if(mi.id === e.missionId){
+            if(mi.type === 'passenger'){
+              mi.ambushCompleted = true;
+              PD.save();
+            } else if(mi.type === 'defence'){
+              mi.have = (mi.have | 0) + 1;
+              if(mi.have >= mi.need){
+                // mission complete - reward granted in _checkMissions
+              }
+              PD.save();
+            }
+          }
+        }
+      }
     },
 
     _hit(pos){
@@ -1190,6 +1282,8 @@
             window.PD.save();
             if(window.PD.systemIdx !== prevSys){ this.clearTransient(); this.resetAsteroids(); } // Stage B+C: fresh encounters + local mining debris in the new system
             this.syncWorld(); // Stage 1: hide bodies of systems other than the new current one
+            // Spawn mission-specific encounters for this system
+            this._spawnMissionEncounters();
             window.Game.uiToast('⇢ ARRIVED — ' + this.warp.name);
             window.GameAudio.pickup();
             this.warp = null;
