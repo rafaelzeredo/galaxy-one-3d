@@ -595,7 +595,9 @@
     // mission progress / completion (runs every frame in space & on the surface)
     _checkMissions(){
       const PD = window.PD;
+      const S = window.Space;
       if(!PD.missions.length) return;
+      if(!S) return;
       for(let i = PD.missions.length - 1; i >= 0; i--){
         const mi = PD.missions[i];
         if(mi.type === 'defence'){
