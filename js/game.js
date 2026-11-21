@@ -18,7 +18,8 @@
         menu: document.getElementById('menu'),
         menuInner: document.getElementById('menu-inner'),
         fade: document.getElementById('fade'),
-        start: document.getElementById('screen-start')
+        start: document.getElementById('screen-start'),
+        gameover: document.getElementById('screen-gameover')
       };
       this.hudCtx = this.els.hud.getContext('2d');
       this.fade = this.els.fade;
@@ -226,19 +227,39 @@
       window.GameAudio.bigBoom();
       this._fade(() => {
         const PD = window.PD;
-        for(const k in window.PD.cargo) window.PD.cargo[k] = Math.floor(window.PD.cargo[k] * 0.7);
-        window.PD.save();
-        // respawn at ship, aliens scatter a bit
-        const st = window.Planet.state;
-        window.Planet.player.x = st.ship.x;
-        window.Planet.player.y = st.ship.y + 40;
-        window.Planet.aliens = window.Planet.aliens.filter(a => Math.hypot(a.x - st.ship.x, a.y - st.ship.y) > 600);
-        // restore player health to full on emergency evacuation
-        PD.playerHp = PD.playerHpMax();
-        PD.resetShipState();
-        window.Planet.hitFlash = 0;
+        // Do NOT respawn on planet. Trigger Game Over.
+        // Save current state as checkpoint (preserving all progress)
+        PD.save();
+        // Show Game Over screen
+        this.state = 'gameover';
+        this.els.gameover.classList.remove('hidden');
+        this.els.hud.classList.add('hidden');
+        this.els.cross.classList.add('hidden');
+        this.els.space.classList.add('hidden');
+        // Wire up buttons
+        const btnContinue = document.getElementById('btn-gameover-continue');
+        const btnNew = document.getElementById('btn-gameover-new');
+        if(btnContinue){
+          btnContinue.disabled = !PD.hasSave();
+          btnContinue.onclick = () => {
+            PD.load();
+            this.els.gameover.classList.add('hidden');
+            this._toSpace(false);
+            window.Space.syncWorld();
+            this.deathHandled = false;
+          };
+        }
+        if(btnNew){
+          btnNew.onclick = () => {
+            PD.newGame();
+            PD.save();
+            this.els.gameover.classList.add('hidden');
+            this._toSpace(true);
+            window.Space.syncWorld();
+            this.deathHandled = false;
+          };
+        }
         this.deathHandled = false;
-        this.uiToast('EMERGENCY EVAC — you wake up aboard your ship');
       });
     },
 

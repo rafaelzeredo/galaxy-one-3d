@@ -439,6 +439,7 @@
       // aliens AI
       for(const al of this.aliens){
         al.t += dt;
+        if(al.meleeT && al.meleeT > 0) al.meleeT -= dt;
         const d = Math.hypot(p.x - al.x, p.y - al.y);
         if(d < 300){
           const ang = Math.atan2(p.y - al.y, p.x - al.x);
@@ -452,6 +453,21 @@
                 al.atkT = 2.2;
                 this.bullets.push({ x: al.x, y: al.y, vx: Math.cos(ang) * 240, vy: Math.sin(ang) * 240, life: 1.2, friendly: false });
                 window.GameAudio.alienHiss();
+              }
+            }
+            // always-active melee: player inflicts damage on contact with ranged aliens too
+            if(d < 24 && (!al.meleeT || al.meleeT <= 0)){
+              al.meleeT = 0.6;
+              al.hp -= 8;
+              if(al.hp <= 0){
+                this.aliens.splice(this.aliens.indexOf(al), 1);
+                this.state.stats.kills++;
+                this._spawnFx(al.x, al.y, this.pal.alien, 12, 130, 3, true, 0.6);
+                this._spawnFx(al.x, al.y, '#0e0a12', 5, 70, 2.4, false, 0.5);
+                window.GameAudio.alienDie();
+                const roll = Math.random();
+                if(roll < 0.55) this._give('goo', 1);
+                else if(roll < 0.65) this._give('crystal', 1);
               }
             }
           } else {

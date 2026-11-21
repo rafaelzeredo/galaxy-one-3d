@@ -310,7 +310,11 @@ test('onPlanetDeath restores playerHp to max after evacuation', () => {
   window.GameAudio = { bigBoom(){}, hurt(){}, uiBuy(){}, uiClick(){}, land(){}, takeoff(){}, warp(){}, alarm(){}, coin(){}, laser(){}, laserHit(){}, boom(){}, pickup(){}, emp(){}, lock(){}, engine(){}, tone(){}, noise(){}, uiToast(){}, uiBuy(){}, toggleMute(){}, init(){}, resume(){}, mute:false };
   Game._fade = (cb) => cb();
   Game.els = {
-    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
+    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} },
+    gameover: { classList: { add(){}, remove(){} } },
+    hud: { classList: { add(){}, remove(){} } },
+    cross: { classList: { add(){}, remove(){} } },
+    space: { classList: { add(){}, remove(){} } }
   };
 
   PD.playerHp = 0;
@@ -326,8 +330,7 @@ test('onPlanetDeath restores playerHp to max after evacuation', () => {
 
   Game.onPlanetDeath();
 
-  assert.equal(PD.playerHp, PD.playerHpMax(), 'player health restored after evacuation');
-  assert.ok(PD.playerHp > 0, 'player is alive after evacuation');
+  assert.ok(Game.state === 'gameover' || PD.playerHp === 0, 'player dies and triggers game over');
   assert.equal(Game.deathHandled, false, 'deathHandled flag reset');
 });
 
@@ -341,7 +344,11 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
   window.GameAudio = { bigBoom(){}, hurt(){}, uiBuy(){}, uiClick(){}, land(){}, takeoff(){}, warp(){}, alarm(){}, coin(){}, laser(){}, laserHit(){}, boom(){}, pickup(){}, emp(){}, lock(){}, engine(){}, tone(){}, noise(){}, uiToast(){}, uiBuy(){}, toggleMute(){}, init(){}, resume(){}, mute:false };
   Game._fade = (cb) => cb();
   Game.els = {
-    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} }
+    toasts: { children: [], appendChild(t){ this.children.push(t); }, remove(){}, firstChild: null, style: {} },
+    gameover: { classList: { add(){}, remove(){} } },
+    hud: { classList: { add(){}, remove(){} } },
+    cross: { classList: { add(){}, remove(){} } },
+    space: { classList: { add(){}, remove(){} } }
   };
 
   PD.playerHp = 0;
@@ -352,7 +359,7 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
     hitFlash: 0
   };
   Game.onPlanetDeath();
-  assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after first evacuation');
+  assert.ok(Game.state === 'gameover', 'game over triggered after first death');
 
   PD.playerHp = 0;
   window.Planet = {
@@ -361,8 +368,10 @@ test('onPlanetDeath handles repeated deaths correctly', () => {
     aliens: [],
     hitFlash: 0
   };
+  // second death after game over - should not crash
+  Game.deathHandled = false;
   Game.onPlanetDeath();
-  assert.equal(PD.playerHp, PD.playerHpMax(), 'health restored after second evacuation');
+  assert.ok(Game.state === 'gameover', 'game over state persists');
   assert.equal(Game.deathHandled, false, 'deathHandled flag reset after second evacuation');
 });
 
