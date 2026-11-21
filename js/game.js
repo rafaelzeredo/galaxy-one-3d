@@ -258,6 +258,12 @@
         window.PD.systemIdx = station.sys;
         window.PD.save();
       }
+      // dock: stop engine audio and hide the exterior space scene
+      this._stationDocked = true;
+      if(window.Space) window.Space.exit();
+      if(this.els && this.els.space) this.els.space.classList.add('hidden');
+      // load this system's mission board (generate lazily on render)
+      this._npcs = (window.PD.missionBoards && window.PD.missionBoards[window.PD.systemIdx]) || null;
       // procedural economy: prices reshuffle every visit (all markets)
       window.PD.rollMarkets();
       this.visitN++;
@@ -295,6 +301,11 @@
       this._closeCd = 6; // ~0.1s: block instant E-reopen at interactables
       this.els.menu.classList.add('hidden');
       this.els.menu.classList.remove('open'); // Step 3E: menu open -> cursor visible over game viewport
+       if(this._stationDocked){
+         this._stationDocked = false;
+         if(this.els && this.els.space) this.els.space.classList.remove('hidden');
+         if(window.Space) window.Space.active = true;
+       }
     },
 
     _lvl(l){ return '▮'.repeat(l) + '▯'.repeat(5 - l); },
@@ -442,16 +453,31 @@
       };
       const nameOf = () => pick(firsts) + ' ' + String.fromCharCode(65 + Math.floor(Math.random() * 26)) + '.';
       const roleOf = () => pick(roles);
-      // NPC 0 always offers a cargo delivery run so every visit has one
+      const acceptedIds = new Set((PD.missions || []).map(m => m.id));
       const t0 = 'delivery';
-      const t1 = pick(types), t2 = pick(types);
+      let t1 = pick(types), t2 = pick(types);
+      // avoid offering missions already accepted by the player
+      let tries = 0;
+      while(acceptedIds.has(t0 + '-' + this.visitN + '-0') && tries++ < 5) t0 = pick(types);
+      tries = 0;
+      while(acceptedIds.has(t1 + '-' + this.visitN + '-1') && tries++ < 5) t1 = pick(types);
+      tries = 0;
+      while(acceptedIds.has(t2 + '-' + this.visitN + '-2') && tries++ < 5) t2 = pick(types);
       const slots = [[t0], [t1], [t2]];
       for(let i = 0; i < 3; i++){
         const name = nameOf(), role = roleOf();
-        const m = rollMission(slots[i][0], i);
+        let m = rollMission(slots[i][0], i);
+        let r = 0;
+        while(acceptedIds.has(m.id) && r++ < 5){
+          m = rollMission(pick(types), i);
+        }
         m.npc = name + ' (' + role + ')';
         this._npcs.push({ name: name + ' · ' + role, mission: m, dealt: false });
       }
+      // persist board per system
+      if(!PD.missionBoards) PD.missionBoards = {};
+      PD.missionBoards[PD.systemIdx | 0] = this._npcs;
+      PD.save();
     },
 
     _renderMissions(m){
@@ -753,6 +779,7 @@
       }
       this.menuClose();
       window.GameAudio.warp();
+      if(window.PD.missionBoards) delete window.PD.missionBoards[cur]; // refresh departing system's board
       const ok = window.Space.hyperspaceToSystem(si);
       if(!ok) this._renderGalaxy();
       // Living world: vendors of the system we are leaving rotate to fresh
