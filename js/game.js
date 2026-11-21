@@ -187,7 +187,7 @@
             systemIdx: sys,
             planetIdx: best,
             progress: 0,
-            components: { hull_plate: 3, power_cell: 2 },
+            components: { hull_plate: 2, power_cell: 2 },
             have: { hull_plate: 0, power_cell: 0 },
             playerWreck: null,
             salvageWreck: null,

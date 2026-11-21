@@ -87,7 +87,7 @@
           }
         }
         if(!cr.have) cr.have = { hull_plate: 0, power_cell: 0 };
-        if(!cr.components) cr.components = { hull_plate: 3, power_cell: 2 };
+        if(!cr.components) cr.components = { hull_plate: 2, power_cell: 2 };
         if(!cr.playerWreck) cr.playerWreck = this.state.playerWreck;
         if(!cr.salvageWreck) cr.salvageWreck = this.state.salvageWreck;
         this.repairT = (cr.progress || 0) * 6;
@@ -455,21 +455,6 @@
                 window.GameAudio.alienHiss();
               }
             }
-            // always-active melee: player inflicts damage on contact with ranged aliens too
-            if(d < 24 && (!al.meleeT || al.meleeT <= 0)){
-              al.meleeT = 0.6;
-              al.hp -= 8;
-              if(al.hp <= 0){
-                this.aliens.splice(this.aliens.indexOf(al), 1);
-                this.state.stats.kills++;
-                this._spawnFx(al.x, al.y, this.pal.alien, 12, 130, 3, true, 0.6);
-                this._spawnFx(al.x, al.y, '#0e0a12', 5, 70, 2.4, false, 0.5);
-                window.GameAudio.alienDie();
-                const roll = Math.random();
-                if(roll < 0.55) this._give('goo', 1);
-                else if(roll < 0.65) this._give('crystal', 1);
-              }
-            }
           } else {
             al.x += Math.cos(ang) * al.speed * dt;
             al.y += Math.sin(ang) * al.speed * dt;
@@ -477,25 +462,31 @@
             if(d < 24 && al.atkT <= 0){
               al.atkT = 0.9;
               this._hurt(al.spitter ? 10 : 8 + this.planet.alienRate * 3);
-              // always-active melee: player inflicts damage on contact, no weapon or ammo needed
-              al.hp -= 8;
-              if(al.hp <= 0){
-                this.aliens.splice(this.aliens.indexOf(al), 1);
-                this.state.stats.kills++;
-                this._spawnFx(al.x, al.y, this.pal.alien, 12, 130, 3, true, 0.6);
-                this._spawnFx(al.x, al.y, '#0e0a12', 5, 70, 2.4, false, 0.5);
-                window.GameAudio.alienDie();
-                const roll = Math.random();
-                if(roll < 0.55) this._give('goo', 1);
-                else if(roll < 0.65) this._give('crystal', 1);
-              }
             }
           }
         } else {
           al.wob += dt;
           al.x += Math.cos(al.wob * 0.7) * 18 * dt;
-          al.y += Math.sin(al.wob * 0.55) * 18 * dt;
+          al.y += Math.sin(al.wob * 0.7) * 18 * dt;
         }
+        // unified always-active melee: player inflicts damage on contact with ANY alien
+        if(d < 24 && (!al.meleeT || al.meleeT <= 0)){
+          al.meleeT = 0.6;
+          al.hp -= 8;
+          if(al.hp <= 0){
+            this.aliens.splice(this.aliens.indexOf(al), 1);
+            this.state.stats.kills++;
+            this._spawnFx(al.x, al.y, this.pal.alien, 12, 130, 3, true, 0.6);
+            this._spawnFx(al.x, al.y, '#0e0a12', 5, 70, 2.4, false, 0.5);
+            window.GameAudio.alienDie();
+            const roll = Math.random();
+            if(roll < 0.55) this._give('goo', 1);
+            else if(roll < 0.65) this._give('crystal', 1);
+          }
+        }
+      }
+      // clamp alien positions to world bounds
+      for(const al of this.aliens){
         al.x = Math.max(40, Math.min(WORLD - 40, al.x));
         al.y = Math.max(40, Math.min(WORLD - 40, al.y));
       }
