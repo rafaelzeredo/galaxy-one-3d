@@ -857,17 +857,18 @@
     // Stage C: hyperspace confirmation -> start the jump (arrival persists system)
     _confirmHyperspace(){
       const pj = this._pendingJump;
-      this._pendingJump = null;
       if(!pj) return;
       const si = pj.system | 0;
       const cur = window.PD.systemIdx | 0;
-      if(si === cur){ this._renderGalaxy(); return; }
+      if(si === cur){ this._pendingJump = null; this._renderGalaxy(); return; }
       if(window.PD.crashRecovery && window.PD.crashRecovery.active){
+        this._pendingJump = null;
         this.uiToast('SHIP DAMAGED — repair the wreck before travel');
         this._renderGalaxy();
         return;
       }
       if(!window.PD.hasModule('hyperdrive')){
+        this._pendingJump = null;
         this.uiToast('✖ HYPERDRIVE REQUIRED — dock at a station to buy the module');
         this._renderGalaxy();
         return;
@@ -879,10 +880,12 @@
       }
       if(blocked){
         window.GameAudio.alarm();
-        this.uiToast('✖ JUMP BLOCKED — HOSTILES IN RANGE');
+        this.uiToast('✖ JUMP BLOCKED — HOSTILES IN RANGE (clear nearby pirates first)');
         this._renderGalaxy();
         return;
       }
+      // jump approved: clear pending jump and initiate
+      this._pendingJump = null;
       this.menuClose();
       window.GameAudio.warp();
       if(window.PD.missionBoards) delete window.PD.missionBoards[cur]; // refresh departing system's board
