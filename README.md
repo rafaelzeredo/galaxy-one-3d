@@ -18,15 +18,21 @@ Or play the deployed build on **GitHub Pages** (see repo Settings → Pages).
 1. Fly in 3D space (keyboard-only: `W`/`S` pitch, `A`/`D` turn, `B`/`N` thrust,
    `SPACE` lasers). Orientation comes from the keyboard only — the mouse never
    steers the ship during spaceflight. Pitch + yaw only, with auto-level — the
-   ship can't end up upside-down. Lasers fire toward the crosshair (converging camera ray).
+   ship can't end up upside-down. Lasers fire toward the crosshair and converge on
+   the locked/hovered target, so they hit at zero thrust as reliably as at full speed.
    Thrust is a persistent throttle: the ship starts at a default cruising speed of
    ~1/3 max speed; hold `B` to accelerate toward max, release to hold that speed;
-   hold `N` to brake toward zero, release to hold. `M` mutes audio.
+   hold `N` to brake toward zero, release to hold. `G` launches a homing missile
+   (Homing Missile System + ammo) at the persistent locked target; `F` fires the
+   EMP Emitter. `M` mutes audio.
 2. Shoot asteroids → collect floating ore. Fight pirates. Earn credits.
 3. Targeting: hover the crosshair over an object to see its bracket + info panel
    (name / type / distance / value). Hold the crosshair on a target to **lock on** —
-   a progress ring fills around the crosshair and a chirp confirms the lock.
-   The **Target Scanner** upgrade speeds it up (L1 = 3.0s → L5 = 0.5s).
+   a progress ring fills around the crosshair and a chirp confirms the lock. Locks
+   are **persistent**: turning away or moving the reticle does not drop the target,
+   so homing missiles keep their guidance until the target is destroyed. The
+   **Target Scanner** upgrade speeds lock-on up (L1 = 3.0s → L5 = 0.5s).
+   Press `TAB` → **CONTROLS** for the full, current keyboard reference.
 4. Dock at the central station (`E` when prompted):
    - **SHIPYARD** tab — sell raw cargo, buy medkits & ship upgrades
      (weapon / engine / hull / shield / scanner).

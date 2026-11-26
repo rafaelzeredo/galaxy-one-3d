@@ -38,7 +38,7 @@
     retrieval: { name: 'Magnetic Mining', desc: 'huge ore magnet radius', cost: 280 },
     passenger: { name: 'Passenger Module', desc: 'unlocks ferry missions', cost: 320 },
     emp:       { name: 'EMP Emitter',      desc: 'non-lethal pirate disable [F]', cost: 480 },
-    missiles:  { name: 'Homing Missile System', desc: 'enables missile fire (ammo sold separately)', cost: 520 },
+    missiles:  { name: 'Homing Missile System', desc: 'missile fire [G] (ammo sold separately)', cost: 520 },
     hyperdrive:{ name: 'Hyperdrive',       desc: 'jump to another star system', cost: 800 }
   };
 

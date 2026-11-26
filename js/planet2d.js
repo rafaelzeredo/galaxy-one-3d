@@ -586,7 +586,7 @@
       const _cr = PD.crashRecovery;
       if(_cr && _cr.active && _cr.planetIdx === PD.planetIndex){
         if(!_cr.have) _cr.have = { hull_plate: 0, power_cell: 0 };
-        if(!_cr.components) _cr.components = { hull_plate: 3, power_cell: 2 };
+        if(!_cr.components) _cr.components = { hull_plate: 2, power_cell: 2 };
         const needHP = _cr.components.hull_plate - (_cr.have.hull_plate || 0);
         const needPC = _cr.components.power_cell - (_cr.have.power_cell || 0);
         if(this.state.salvage){

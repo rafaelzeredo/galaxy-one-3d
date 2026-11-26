@@ -87,6 +87,10 @@
       this.lockNeed = 3;      // current lock time from scanner level
       this.locked = false;    // true once lockT >= lockNeed
       this.lockedTarget = null; // pirate entity currently locked (for missiles)
+      this.lockedId = null;   // stable hover id the lock was acquired from
+      this.lockCandidateId = null; // target currently accumulating lock time
+      this.warpScanT = 0;     // independent scan timer for planet/station travel locks
+      this.warpScanId = null;
       // quick travel (warp) state
       this.warpTo = null;     // { pos, name, kind, idx } once a target is fully scanned
       this.warpPrompt = '';
@@ -367,6 +371,8 @@
         pos.clone().sub(this.ship.position).normalize());
       this.vel.set(0, 0, 0);
       this.warp = null; this.locked = false; this.lockT = 0; this.hover = null; this.hoverId = null;
+      this.lockedTarget = null; this.lockedId = null; this.lockCandidateId = null;
+      this.warpTo = null; this.warpPrompt = ''; this.warpScanT = 0; this.warpScanId = null;
       this.thrustS = 0.4; this.camPos = null;
       for(let i = 0; i < 10; i++) this._emitTrail(0, 1, 60);
       return true;
@@ -513,6 +519,9 @@
       if(!this.vel) this.vel = V3(0, 0, 0);
       window.PD.resetShipState();
       this.warp = null; this.warpTo = null; this.warpPrompt = '';
+      this.locked = false; this.lockedTarget = null; this.lockedId = null;
+      this.lockT = 0; this.lockCandidateId = null; this.hover = null; this.hoverId = null;
+      this.warpScanT = 0; this.warpScanId = null;
       this.thrustS = 1 / 3; this.bank = 0; this.hull.rotation.z = 0;
       // camera swoop: start further back and glide in for a cinematic arrival
       const back = V3(0, 3.2, 11).applyQuaternion(this.ship.quaternion);
@@ -539,6 +548,14 @@
     clearTransient(){
       for(const p of this.pirates){ this.scene.remove(p.mesh); }
       this.pirates.length = 0;
+      this.lockedTarget = null; this.locked = false; this.lockT = 0;
+      this.lockedId = null; this.lockCandidateId = null;
+      this.hover = null; this.hoverId = null;
+      this.warpTo = null; this.warpPrompt = ''; this.warpScanT = 0; this.warpScanId = null;
+      if(this.missiles3d){
+        for(const ms of this.missiles3d){ this.scene.remove(ms.mesh); }
+        this.missiles3d.length = 0;
+      }
       for(let i = this.lasers.length - 1; i >= 0; i--){
         const l = this.lasers[i];
         this.scene.remove(l.mesh);
@@ -592,6 +609,9 @@
       this.thrustS = 1 / 3;
       for(const p of this.pirates) this.scene.remove(p.mesh);
       this.pirates.length = 0;
+      this.locked = false; this.lockedTarget = null; this.lockedId = null;
+      this.lockT = 0; this.lockCandidateId = null; this.hover = null; this.hoverId = null;
+      this.warpTo = null; this.warpPrompt = ''; this.warpScanT = 0; this.warpScanId = null;
       window.PD.systemIdx = 0; // rebuilt at ORION STATION
       window.PD.save();
       this.syncWorld(); // Stage 1: ORION REACH is the only active system after respawn
@@ -642,6 +662,13 @@
     },
 
     // Crosshair hover detection + lock-on timing (scanner upgrade speeds it up).
+    //
+    // A completed lock is sticky: once a pirate is locked, moving the reticle
+    // away (or turning the ship) does NOT drop it. The lock is only released
+    // when that pirate is destroyed/removed, or when a different pirate is held
+    // under the reticle long enough to become the new lock. Planet/station
+    // quick-travel scanning is tracked independently so it can coexist with a
+    // held pirate lock.
     _updateLock(dt){
       const tg = this._targets = this.getScreenTargets();
       const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
@@ -653,43 +680,72 @@
         const d = Math.hypot(sx - cx, sy - cy);
         if(d < r + 6 && d < hd){ hd = d; hover = t; }
       }
-      if(hover){
-        if(this.hoverId !== hover.id){ this.hoverId = hover.id; this.lockT = 0; this.locked = false; this.lockedTarget = null; }
-        this.hover = hover;
-        this.lockNeed = window.PD.scannerLockTime();
-        if(!this.locked){
-          this.lockT += dt;
-          if(this.lockT >= this.lockNeed){
-            this.locked = true;
-            window.GameAudio.lock();
-            if(hover.type === 'pirate'){
-              this.lockedTarget = this.pirates[parseInt(hover.id.slice(1), 10)] || null;
-            }
-          }
+
+      this.lockNeed = window.PD.scannerLockTime();
+
+      // Validate the persistent lock before consuming hover state.
+      if(this.lockedTarget &&
+         (this.lockedTarget.hp <= 0 || !this.lockedTarget.mesh || !this.pirates.includes(this.lockedTarget))){
+        this.lockedTarget = null; this.lockedId = null;
+        this.locked = false; this.lockT = 0;
+      }
+
+      this.hover = hover || null;
+      this.hoverId = hover ? hover.id : null;
+
+      // --- pirate lock acquisition / intentional retarget ---
+      const candidate = hover && hover.type === 'pirate' && hover.entity ? hover : null;
+      if(candidate && this.lockedTarget && candidate.entity === this.lockedTarget){
+        // Already locked on the hovered pirate: nothing to charge.
+        this.lockCandidateId = null;
+        this.lockT = 0;
+      } else if(candidate){
+        if(this.lockCandidateId !== candidate.id){
+          this.lockCandidateId = candidate.id;
+          this.lockT = 0;
         }
-        // fully scanned planet/station => quick travel target
-        if(this.locked && (hover.type === 'planet' || hover.type === 'station')){
-          let idx, base, pad;
-          if(hover.type === 'planet'){
-            idx = parseInt(hover.id.slice(2), 10);
-            base = this.planetMeshes[idx].position;
-            pad = window.PLANETS[idx].size + 55;
-          } else {
-            idx = parseInt(hover.id.slice(1), 10);
-            base = this.stations[idx].grp.position;
-            pad = 130;
-          }
-          const dirFrom = this.ship.position.clone().sub(base).normalize();
-          this.warpTo = { pos: base.clone().addScaledVector(dirFrom, pad), name: hover.name,
-            kind: hover.type, idx };
-          this.warpPrompt = 'Press <b>Q</b> to quick-travel to <b>' + hover.name + '</b>';
-        } else {
-          this.warpTo = null;
-          this.warpPrompt = '';
+        this.lockT += dt;
+        if(this.lockT >= this.lockNeed){
+          this.lockedTarget = candidate.entity;
+          this.lockedId = candidate.id;
+          this.locked = true;
+          this.lockCandidateId = null;
+          window.GameAudio.lock();
         }
       } else {
-        this.hover = null; this.hoverId = null; this.lockT = 0; this.locked = false; this.lockedTarget = null;
-        this.warpTo = null; this.warpPrompt = '';
+        this.lockCandidateId = null;
+        this.lockT = 0;
+      }
+      // A held pirate lock remains active regardless of the current reticle.
+      this.locked = !!this.lockedTarget;
+
+      // --- independent planet/station quick-travel scan ---
+      const body = hover && (hover.type === 'planet' || hover.type === 'station') ? hover : null;
+      if(body){
+        if(this.warpScanId !== body.id){ this.warpScanId = body.id; this.warpScanT = 0; }
+        this.warpScanT += dt;
+      } else {
+        this.warpScanId = null;
+        this.warpScanT = 0;
+      }
+      if(body && this.warpScanT >= this.lockNeed){
+        let idx, base, pad;
+        if(body.type === 'planet'){
+          idx = parseInt(body.id.slice(2), 10);
+          base = this.planetMeshes[idx].position;
+          pad = window.PLANETS[idx].size + 55;
+        } else {
+          idx = parseInt(body.id.slice(1), 10);
+          base = this.stations[idx].grp.position;
+          pad = 130;
+        }
+        const dirFrom = this.ship.position.clone().sub(base).normalize();
+        this.warpTo = { pos: base.clone().addScaledVector(dirFrom, pad), name: body.name,
+          kind: body.type, idx };
+        this.warpPrompt = 'Press <b>Q</b> to quick-travel to <b>' + body.name + '</b>';
+      } else {
+        this.warpTo = null;
+        this.warpPrompt = '';
       }
     },
 
@@ -722,16 +778,32 @@
       return v.sub(this.camera.position).normalize();
     },
 
+    // Aim point on the crosshair ray. Locked/hovered targets give the real
+    // convergence distance, so wing-mounted lasers actually meet the target
+    // instead of flying on a parallel, permanently offset line.
+    _aimPoint(){
+      const aim = this._aimDir();
+      let dist = 600;
+      const tgt = this.lockedTarget && this.lockedTarget.mesh ? this.lockedTarget
+        : (this.hover && this.hover.type === 'pirate' && this.hover.entity ? this.hover.entity : null);
+      if(tgt && tgt.mesh) dist = this.camera.position.distanceTo(tgt.mesh.position);
+      else if(this.hover && this.hover.dist) dist = this.hover.dist;
+      dist = Math.max(24, Math.min(3000, dist));
+      return this.camera.position.clone().addScaledVector(aim, dist);
+    },
+
     _fire(){
       const dmg = window.PD.laserDmg();
-      const dir = this._aimDir();
       const right = V3(1, 0, 0).applyQuaternion(this.ship.quaternion);
       this.wing = 1 - this.wing;
       const mesh = new THREE.Mesh(this.laserGeo,
         new THREE.MeshBasicMaterial({ color: this.wing ? 0x7ff7ff : 0xaef2ff }));
-      mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -3.4 : 3.4).addScaledVector(dir, 2);
+      mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -3.4 : 3.4);
+      // converge the shot on the crosshair aim point from the actual muzzle
+      const dir = this._aimPoint().sub(mesh.position).normalize();
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), dir);
-      this.lasers.push({ mesh, vel: dir.clone().multiplyScalar(700), dmg, life: 1.6, mine: true });
+      this.lasers.push({ mesh, vel: dir.clone().multiplyScalar(700), dmg, life: 1.6,
+        mine: true, prev: mesh.position.clone() });
       this.scene.add(mesh);
       window.GameAudio.laser();
     },
@@ -757,7 +829,8 @@
       mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -2.0 : 2.0).addScaledVector(fwd, 3);
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), fwd);
       const vel = fwd.clone().multiplyScalar(180);
-      this.missiles3d.push({ mesh, vel, target: target || null, life: 4.0, hit: false, trail: [] });
+      this.missiles3d.push({ mesh, vel, target: (target && this.pirates.includes(target)) ? target : null,
+        life: 4.0, hit: false, trail: [], prev: mesh.position.clone() });
       this.scene.add(mesh);
       window.GameAudio.laser();
     },
@@ -768,7 +841,8 @@
         new THREE.MeshBasicMaterial({ color: p.type.glow }));
       mesh.position.copy(p.mesh.position).addScaledVector(toP, 4);
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), toP);
-      this.lasers.push({ mesh, vel: toP.multiplyScalar(520), dmg: dmg || 7, life: 1.8, mine: false });
+      this.lasers.push({ mesh, vel: toP.multiplyScalar(520), dmg: dmg || 7, life: 1.8, mine: false,
+        prev: mesh.position.clone() });
       this.scene.add(mesh);
       window.GameAudio.tone ? window.GameAudio.laser() : 0;
     },
@@ -991,7 +1065,9 @@
 
     // Single destruction path so bounty, hooks and cleanup never diverge.
     _killPirate(e){
-      if(this.lockedTarget === e) this.lockedTarget = null;
+      if(this.lockedTarget === e){
+        this.lockedTarget = null; this.locked = false; this.lockedId = null; this.lockT = 0;
+      }
       this._spawnExplosion(e.mesh.position, true);
       window.GameAudio.bigBoom();
       const PD = window.PD;
@@ -1172,7 +1248,7 @@
           window.GameAudio.warp();
         }
       }
-      if(!this.warp && inp.pressed('KeyQ') && this.locked && this.warpTo){
+      if(!this.warp && inp.pressed('KeyQ') && this.warpTo){
         let blocked = false;
         for(const e of this.pirates){
           if(e.mesh.position.distanceTo(this.ship.position) < 700){ blocked = true; break; }
@@ -1325,8 +1401,8 @@
         }
       }
 
-      // missiles (F): one launch per key press
-      if(!this.warp && inp.pressed('KeyF') && PD.hasModule('missiles') && PD.missiles > 0){
+      // missiles (G): one launch per key press, guided by the persistent lock
+      if(!this.warp && inp.pressed('KeyG') && PD.hasModule('missiles') && PD.missiles > 0){
         PD.missiles--;
         PD.save();
         this._launchMissile(this.lockedTarget);
@@ -1336,7 +1412,10 @@
       for(let i = this.lasers.length - 1; i >= 0; i--){
         const l = this.lasers[i];
         l.life -= dt;
+        const p0 = l.prev || l.mesh.position.clone();
         l.mesh.position.addScaledVector(l.vel, dt);
+        const p1 = l.mesh.position;
+        l.prev = p1.clone();
         if(l.life <= 0){ this.scene.remove(l.mesh); this.lasers.splice(i, 1); continue; }
         // planets block lasers
         let planetHit = false;
@@ -1344,7 +1423,7 @@
           const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
           const def = window.PLANETS[idx];
           if(!def) continue;
-          if(l.mesh.position.distanceTo(pm.position) < def.size){
+          if(this._segSphereHit(p0, p1, pm.position, def.size)){
             planetHit = true; break;
           }
         }
@@ -1353,7 +1432,8 @@
           let hit = false;
           for(let a = this.asteroids.length - 1; a >= 0; a--){
             const ast = this.asteroids[a];
-            if(l.mesh.position.distanceTo(ast.mesh.position) < (ast.cr != null ? ast.cr : ast.r * 1.15) + 2){
+            const cr = (ast.cr != null ? ast.cr : ast.r * 1.15) + 2;
+            if(this._segSphereHit(p0, p1, ast.mesh.position, cr)){
               ast.hp -= l.dmg;
               this._hit(l.mesh.position);
               if(ast.hp <= 0){
@@ -1377,7 +1457,11 @@
           if(!hit){
             for(let p = this.pirates.length - 1; p >= 0; p--){
               const e = this.pirates[p];
-              if(l.mesh.position.distanceTo(e.mesh.position) < 6){
+              // Swept test: a 700 u/s bolt moves ~12u per frame, so a point
+              // sample can tunnel straight through a hull — especially when
+              // the player is stationary and the geometry repeats each shot.
+              const hitR = 7 * (e.type && e.type.scale ? Math.max(0.85, e.type.scale) : 1);
+              if(this._segSphereHit(p0, p1, e.mesh.position, hitR)){
                 e.hp -= l.dmg;
                 this._hit(l.mesh.position);
                 if(e.hp <= 0) this._killPirate(e);
@@ -1388,7 +1472,7 @@
           }
           if(hit){ this.scene.remove(l.mesh); this.lasers.splice(i, 1); }
         } else {
-          if(l.mesh.position.distanceTo(this.ship.position) < 4.5){
+          if(this._segSphereHit(p0, p1, this.ship.position, 5)){
             PD.dmg(l.dmg);
             this.shieldDelay = 5;
             this.shake = 0.25;
@@ -1403,9 +1487,10 @@
       for(let i = this.missiles3d.length - 1; i >= 0; i--){
         const ms = this.missiles3d[i];
         ms.life -= dt;
-        // homing
+        // homing: guidance is bound to the original locked entity, never to the
+        // player's current facing or whatever target is selected now.
         let tgt = ms.target;
-        if(tgt && !this.pirates.includes(tgt)) tgt = null; // target destroyed
+        if(tgt && (!tgt.mesh || tgt.hp <= 0 || !this.pirates.includes(tgt))) tgt = null; // target destroyed/removed
         if(tgt){
           const toT = tgt.mesh.position.clone().sub(ms.mesh.position);
           const dist = toT.length();
@@ -1426,7 +1511,10 @@
         // accelerate
         const spd = ms.vel.length();
         ms.vel.setLength(Math.min(420, spd + 220 * dt));
+        const mp0 = ms.prev || ms.mesh.position.clone();
         ms.mesh.position.addScaledVector(ms.vel, dt);
+        const mp1 = ms.mesh.position;
+        ms.prev = mp1.clone();
         ms.mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), ms.vel.clone().normalize());
         if(ms.life <= 0){ this.scene.remove(ms.mesh); this.missiles3d.splice(i, 1); continue; }
         // collisions
@@ -1436,14 +1524,14 @@
           const idx = (pm.userData && pm.userData.index != null) ? pm.userData.index : this.planetMeshes.indexOf(pm);
           const def = window.PLANETS[idx];
           if(!def) continue;
-          if(ms.mesh.position.distanceTo(pm.position) < def.size + 2){ hit = true; break; }
+          if(this._segSphereHit(mp0, mp1, pm.position, def.size + 2)){ hit = true; break; }
         }
         // asteroids
         if(!hit){
           for(let a = this.asteroids.length - 1; a >= 0; a--){
             const ast = this.asteroids[a];
             const cr = ast.cr != null ? ast.cr : ast.r * 1.15;
-            if(ms.mesh.position.distanceTo(ast.mesh.position) < cr + 2){
+            if(this._segSphereHit(mp0, mp1, ast.mesh.position, cr + 2)){
               // destroy asteroid + ore
               this._spawnExplosion(ast.mesh.position, false);
               window.GameAudio.boom();
@@ -1463,7 +1551,7 @@
         // pirates
         if(!hit){
           for(const e of this.pirates){
-            if(ms.mesh.position.distanceTo(e.mesh.position) < 6){
+            if(this._segSphereHit(mp0, mp1, e.mesh.position, 7)){
               e.hp -= 60;
               this._hit(ms.mesh.position);
               if(e.hp <= 0) this._killPirate(e);
@@ -1704,7 +1792,7 @@
         const p = this.pirates[i];
         const dist = p.mesh.position.distanceTo(this.ship.position);
         v.copy(p.mesh.position).project(this.camera);
-        if(v.z < 1) out.push({ id: 'p' + i, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate',
+        if(v.z < 1) out.push({ id: 'p' + i, entity: p, x: (v.x + 1) / 2, y: (1 - v.y) / 2, type: 'pirate',
           name: p.type.name, kind: 'HOSTILE',
           value: 'BOUNTY ' + p.type.bounty[0] + '-' + p.type.bounty[1] + ' CR',
           hp: p.hp, maxHp: (p.type && p.type.hp) ? p.type.hp[1] : p.hp,

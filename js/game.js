@@ -720,6 +720,18 @@
       const S = window.Space;
       const hasHD = PD.hasModule('hyperdrive');
 
+      // Controls reference is reachable from the TAB menu.
+      const ctrlRow = document.createElement('div');
+      ctrlRow.className = 'menu-row';
+      ctrlRow.innerHTML = '<div class="name">CONTROLS<small>all keyboard bindings, grouped by activity</small></div>' +
+        '<div class="price">KEYBOARD</div>';
+      const ctrlBtn = document.createElement('button');
+      ctrlBtn.className = 'menu-btn';
+      ctrlBtn.textContent = 'CONTROLS';
+      ctrlBtn.addEventListener('click', () => { window.GameAudio.uiClick(); this._renderControls(); });
+      ctrlRow.appendChild(ctrlBtn);
+      m.appendChild(ctrlRow);
+
       // ---------- CURRENT SYSTEM: local destinations ----------
       const curHead = document.createElement('div');
       curHead.innerHTML = '<div class="bar-label" style="margin:10px 0 6px;color:#5ff0ff">' + curName + ' ◀ CURRENT</div>';
@@ -848,6 +860,75 @@
       m.appendChild(close);
     },
 
+    // Tab > Controls: a single authoritative reference for the bindings the
+    // game actually implements. Opened from the galaxy map; Back returns there.
+    _renderControls(){
+      const m = this.els.menuInner;
+      m.innerHTML = '<h2>CONTROLS</h2><div class="sub">Actual keyboard bindings · [TAB] / [E] / [ESC] to close</div>';
+      const groups = [
+        { title: 'SPACE FLIGHT & NAVIGATION', rows: [
+          ['W / S', 'pitch the nose up / down'],
+          ['A / D', 'turn left / right'],
+          ['B hold', 'increase engine thrust'],
+          ['N hold', 'decrease engine thrust / brake'],
+          ['Q', 'quick-travel to the scanned planet or station'],
+          ['TAB', 'open / close the galaxy map'],
+          ['E', 'dock at a station or land on a planet when prompted']
+        ]},
+        { title: 'WEAPONS & COMBAT', rows: [
+          ['SPACE / LMB', 'fire ship lasers (works at any speed, including zero thrust)'],
+          ['HOLD CROSSHAIR', 'lock a target (scanner level sets lock time)'],
+          ['G', 'launch a homing missile — requires Homing Missile System + ammo'],
+          ['F', 'fire EMP pulse — requires EMP Emitter'],
+          ['Q', 'quick-travel only when no hostiles are within 700u']
+        ]},
+        { title: 'PLANETARY MOVEMENT & COMBAT', rows: [
+          ['W / A / S / D', 'walk on the surface'],
+          ['SPACE / LMB', 'fire the equipped planetary weapon (uses Pulse Rounds)'],
+          ['G', 'cycle equipped planetary weapon'],
+          ['1 / 2', 'equip Laser Pistol / Assault Rifle'],
+          ['H', 'use a Medkit'],
+          ['R', 'take off when near your ship']
+        ]},
+        { title: 'INTERACTION & MINING', rows: [
+          ['E', 'land / dock / talk to a trader / collect salvage'],
+          ['HOLD E', 'mine ore, chop wood, harvest crystals, repair your ship'],
+          ['R', 'take off from a planet'],
+          ['E', 'close an open menu']
+        ]},
+        { title: 'MENUS & GENERAL', rows: [
+          ['TAB', 'galaxy map (this menu holds the Controls panel)'],
+          ['E / ESC', 'close the current menu'],
+          ['M', 'mute / unmute sound'],
+          ['MOUSE', 'click menu buttons and category tabs']
+        ]},
+        { title: 'EQUIPMENT-DEPENDENT CONTROLS', rows: [
+          ['F', 'EMP Emitter — non-lethal pirate disable'],
+          ['G', 'Homing Missile System — launch guided missile'],
+          ['TAB', 'Hyperdrive — inter-system jumps from the galaxy map'],
+          ['—', 'Passenger Module — required to accept ferry missions'],
+          ['—', 'Target Scanner — shortens lock-on time']
+        ]}
+      ];
+      for(const g of groups){
+        const h = document.createElement('div');
+        h.innerHTML = '<div class="bar-label" style="margin:12px 0 6px;color:#5ff0ff">' + g.title + '</div>';
+        m.appendChild(h);
+        for(const r of g.rows){
+          const row = document.createElement('div');
+          row.className = 'menu-row';
+          row.innerHTML = '<div class="name">' + r[1] + '</div>' +
+            '<div class="price" style="color:#5ff0ff;min-width:110px">' + r[0] + '</div>';
+          m.appendChild(row);
+        }
+      }
+      const back = document.createElement('button');
+      back.className = 'menu-btn menu-close';
+      back.textContent = '◀ BACK TO GALAXY MAP';
+      back.addEventListener('click', () => { window.GameAudio.uiClick(); this._renderGalaxy(); });
+      m.appendChild(back);
+    },
+
     // Stage C: hyperspace confirmation -> start the jump (arrival persists system)
     _confirmHyperspace(){
       const pj = this._pendingJump;
@@ -898,7 +979,7 @@
       pg.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">PLANETARY GEAR</div>';
       m.appendChild(pg);
       // medkit
-      this._row(m, 'Medkit', 'heals 55 player health · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
+      this._row(m, 'Medkit', 'heals 55 player health [H] · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
         if(window.PD.credits < 60) return;
         window.PD.credits -= 60; window.PD.medkits++; window.GameAudio.uiBuy(); window.PD.save(); this._renderStation();
       }, window.PD.credits < 60);
@@ -907,7 +988,7 @@
       const laserOwned = PD.hasWeapon('laserpistol');
       const laserInStock = (stock.weapons.laserpistol || 0) > 0;
       if(laserOwned){
-        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'sell ' + Math.round(laser.cost * 0.6) + ' CR', 'SELL', () => {
+        this._row(m, laser.name, laser.desc + ' · [SPACE] fire · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'sell ' + Math.round(laser.cost * 0.6) + ' CR', 'SELL', () => {
           const refund = PD.sellWeapon('laserpistol');
           window.GameAudio.coin();
           window.PD.save();
@@ -915,7 +996,7 @@
           this._renderStation();
         }, false);
       } else if(laserInStock){
-        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', laser.cost + ' CR', 'BUY', () => {
+        this._row(m, laser.name, laser.desc + ' · [SPACE] fire · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', laser.cost + ' CR', 'BUY', () => {
           if(PD.credits < laser.cost) return;
           PD.credits -= laser.cost;
           PD.weapons.push('laserpistol');
@@ -926,13 +1007,13 @@
           this._renderStation();
         }, false);
       } else {
-        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+        this._row(m, laser.name, laser.desc + ' · [SPACE] fire · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
       }
       const rifle = window.WEAPON_DEFS.assaultrifle;
       const rifleOwned = PD.hasWeapon('assaultrifle');
       const rifleInStock = (stock.weapons.assaultrifle || 0) > 0;
       if(rifleOwned){
-        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'sell ' + Math.round(rifle.cost * 0.6) + ' CR', 'SELL', () => {
+        this._row(m, rifle.name, rifle.desc + ' · [SPACE] fire · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'sell ' + Math.round(rifle.cost * 0.6) + ' CR', 'SELL', () => {
           const refund = PD.sellWeapon('assaultrifle');
           window.GameAudio.coin();
           window.PD.save();
@@ -940,7 +1021,7 @@
           this._renderStation();
         }, false);
       } else if(rifleInStock){
-        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', rifle.cost + ' CR', 'BUY', () => {
+        this._row(m, rifle.name, rifle.desc + ' · [SPACE] fire · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', rifle.cost + ' CR', 'BUY', () => {
           if(PD.credits < rifle.cost) return;
           PD.credits -= rifle.cost;
           PD.weapons.push('assaultrifle');
@@ -951,10 +1032,10 @@
           this._renderStation();
         }, false);
       } else {
-        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+        this._row(m, rifle.name, rifle.desc + ' · [SPACE] fire · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
       }
       if(stock.energyCells > 0){
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
+        this._row(m, 'Pulse Rounds', 'ammo for [SPACE] ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
           if(PD.credits < 25) return;
           PD.credits -= 25;
           PD.energyCells++;
@@ -964,7 +1045,7 @@
           this._renderStation();
         }, false);
       } else {
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
+        this._row(m, 'Pulse Rounds', 'ammo for [SPACE] ranged weapons · out of stock', '25 CR', '—', () => {}, true);
       }
       if(PD.energyCells > 0){
         this._row(m, 'Sell Pulse Rounds', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
@@ -1024,7 +1105,7 @@
       sg.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP GEAR</div>';
       m.appendChild(sg);
       if(stock.missiles > 0){
-        this._row(m, 'Missiles', 'homing missile ammunition · ' + stock.missiles + ' in stock', '60 CR', 'BUY', () => {
+        this._row(m, 'Missiles', '[G] homing missile ammunition · ' + stock.missiles + ' in stock', '60 CR', 'BUY', () => {
           if(PD.credits < 60) return;
           PD.credits -= 60;
           PD.missiles++;
@@ -1034,7 +1115,7 @@
           this._renderStation();
         }, false);
       } else {
-        this._row(m, 'Missiles', 'homing missile ammunition · out of stock', '60 CR', '—', () => {}, true);
+        this._row(m, 'Missiles', '[G] homing missile ammunition · out of stock', '60 CR', '—', () => {}, true);
       }
       if(PD.missiles > 0){
         this._row(m, 'Sell Missiles', 'sell all missiles · refund 25 CR each', PD.missiles + ' × 25 CR', 'SELL', () => {
@@ -1270,7 +1351,7 @@
             this._renderTrade();
           });
       }
-      this._row(m, 'Medkit', 'heals 55 · you carry ' + window.PD.medkits, '55 CR', 'BUY', () => {
+      this._row(m, 'Medkit', 'heals 55 [H] · you carry ' + window.PD.medkits, '55 CR', 'BUY', () => {
         if(window.PD.credits < 55) return;
         window.PD.credits -= 55; window.PD.medkits++; window.GameAudio.uiBuy(); window.PD.save(); this._renderTrade();
       }, window.PD.credits < 55);
@@ -1292,7 +1373,7 @@
       pg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">PLANETARY GEAR</div>';
       m.appendChild(pg);
       if(tStock.energyCells > 0){
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + tStock.energyCells + ' in stock', '30 CR', 'BUY', () => {
+        this._row(m, 'Pulse Rounds', 'ammo for [SPACE] ranged weapons · ' + tStock.energyCells + ' in stock', '30 CR', 'BUY', () => {
           if(PD.credits < 30) return;
           PD.credits -= 30;
           PD.energyCells++;
@@ -1302,7 +1383,7 @@
           this._renderTrade();
         }, false);
       } else {
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '30 CR', '—', () => {}, true);
+        this._row(m, 'Pulse Rounds', 'ammo for [SPACE] ranged weapons · out of stock', '30 CR', '—', () => {}, true);
       }
       for(const wk in window.WEAPON_DEFS){
         const wd = window.WEAPON_DEFS[wk];
@@ -1376,6 +1457,9 @@
           if(shLabel){ shLabel.style.display = 'none'; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = 'none'; }
           const spdLabel = document.getElementById('spd-txt')?.parentElement;
           if(spdLabel){ spdLabel.style.display = 'none'; if(spdLabel.nextElementSibling) spdLabel.nextElementSibling.style.display = 'none'; }
+          // missiles are space-only; hide the counter row on planets
+          const mslLabelP = document.getElementById('msl-label');
+          if(mslLabelP) mslLabelP.style.display = 'none';
         } else {
           hpTxt.textContent = Math.ceil(window.PD.hp) + '/' + window.PD.hullMax();
           hpBar.style.width = (100 * window.PD.hp / window.PD.hullMax()) + '%';
@@ -1410,7 +1494,7 @@
           const mslTxt = document.getElementById('msl-txt');
           const hasMsl = window.PD && window.PD.hasModule && window.PD.hasModule('missiles');
           if(mslEl) mslEl.style.display = (this.state === 'space' && hasMsl) ? '' : 'none';
-          if(mslTxt) mslTxt.textContent = hasMsl ? (window.PD.missiles | 0) : '';
+          if(mslTxt) mslTxt.textContent = hasMsl ? ('×' + (window.PD.missiles | 0)) : '';
         }
       }
       document.getElementById('cargo-lines').textContent = this._fmtCargo();
@@ -1507,9 +1591,24 @@
           }
         }
 
-        // lock-on progress ring around the crosshair
-        if(hov && !S.locked){
-          const pct = Math.min(1, S.lockT / S.lockNeed);
+        // Which hovered object is the one we currently hold a lock on? A lock
+        // persists even when the reticle moves away, so this must be identity
+        // based rather than a single global "locked" flag.
+        const pirateLocked = !!(hov && hov.type === 'pirate' && (
+          (S.lockedTarget && hov.entity === S.lockedTarget) || (S.locked && !S.lockedTarget)));
+        const bodyLocked = !!(hov && (hov.type === 'planet' || hov.type === 'station') && S.warpTo &&
+          S.warpTo.kind === hov.type && S.warpTo.idx === parseInt(hov.id.slice(hov.type === 'planet' ? 2 : 1), 10));
+        const lockedHover = pirateLocked || bodyLocked;
+
+        // lock-on / scan progress ring around the crosshair
+        let charging = false, chargeT = 0;
+        if(hov && hov.type === 'pirate' && !pirateLocked && S.lockCandidateId === hov.id){
+          charging = true; chargeT = S.lockT;
+        } else if(hov && (hov.type === 'planet' || hov.type === 'station') && !bodyLocked && S.warpScanId === hov.id){
+          charging = true; chargeT = S.warpScanT;
+        }
+        if(charging){
+          const pct = Math.min(1, chargeT / Math.max(0.001, S.lockNeed));
           ctx.strokeStyle = 'rgba(95,240,255,0.9)';
           ctx.lineWidth = 3;
           ctx.beginPath();
@@ -1527,21 +1626,21 @@
         // hovered target: brackets + info panel (Name / Type / Distance / Value)
         if(hov){
           const x = hov.x * vw, y = hov.y * vh;
-          const col = S.locked ? 'rgba(255,184,77,0.95)' :
+          const col = lockedHover ? 'rgba(255,184,77,0.95)' :
             hov.type === 'pirate' ? 'rgba(255,95,122,0.9)' :
             hov.type === 'station' ? 'rgba(255,212,121,0.8)' :
             hov.type === 'planet' ? 'rgba(95,240,255,0.8)' : 'rgba(154,210,255,0.75)';
           const size = Math.max(9, Math.min(110, hov.size || 12));
           const g = Math.min(8, size * 0.4);
           ctx.strokeStyle = col;
-          ctx.lineWidth = S.locked ? 2 : 1.3;
+          ctx.lineWidth = lockedHover ? 2 : 1.3;
           ctx.beginPath();
           ctx.moveTo(x - size, y - size + g); ctx.lineTo(x - size, y - size); ctx.lineTo(x - size + g, y - size);
           ctx.moveTo(x + size - g, y - size); ctx.lineTo(x + size, y - size); ctx.lineTo(x + size, y - size + g);
           ctx.moveTo(x + size, y + size - g); ctx.lineTo(x + size, y + size); ctx.lineTo(x + size - g, y + size);
           ctx.moveTo(x - size + g, y + size); ctx.lineTo(x - size, y + size); ctx.lineTo(x - size, y + size - g);
           ctx.stroke();
-          if(S.locked){ // rotating lock ring
+          if(lockedHover){ // rotating lock ring
             const a0 = (performance.now() / 700) % 6.283;
             ctx.strokeStyle = 'rgba(255,184,77,0.6)';
             ctx.lineWidth = 1.6;
@@ -1562,7 +1661,7 @@
             [hov.value || '', 'rgba(255,212,121,0.85)']
           ];
           // Living world UI: locked enemy target shows hull health (bar + numeric)
-          const healthLocked = !!(S.locked && hov && hov.type === 'pirate');
+          const healthLocked = !!(lockedHover && hov && hov.type === 'pirate');
           if(healthLocked){
             lines.push(['HULL ' + Math.ceil(hov.hp || 0) + ' / ' + Math.ceil(hov.maxHp || 0), 'rgba(255,95,122,0.9)']); // Step 3E: red enemy hull health
           }
@@ -1588,6 +1687,22 @@
             ctx.fillStyle = 'rgba(255,95,122,0.9)'; // Step 3E: red enemy hull health bar
             ctx.fillRect(px, hy, hbW * frac, hbH);
           }
+        }
+
+        // Persistent lock readout: remains visible after the reticle leaves the
+        // target, so the player always knows a missile still has guidance.
+        if(S.lockedTarget && S.lockedTarget.mesh && (!hov || hov.entity !== S.lockedTarget)){
+          const lt = S.lockedTarget;
+          const ld = Math.round(lt.mesh.position.distanceTo(S.ship.position));
+          const lhp = Math.max(0, Math.ceil(lt.hp || 0));
+          const lmax = Math.ceil((lt.type && lt.type.hp ? lt.type.hp[1] : lhp) || 1);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = 'rgba(255,184,77,0.95)';
+          ctx.font = 'bold 11px "Trebuchet MS", sans-serif';
+          ctx.fillText('◈ LOCKED · ' + (lt.type ? lt.type.name : 'TARGET'), cx, cy + 70);
+          ctx.fillStyle = 'rgba(223,239,255,0.8)';
+          ctx.font = '10px "Trebuchet MS", sans-serif';
+          ctx.fillText(ld + 'm · HULL ' + lhp + ' / ' + lmax + ' · [G] MISSILE', cx, cy + 84);
         }
 
         // off-screen pirate warning arrows
