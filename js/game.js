@@ -432,19 +432,6 @@
       return list;
     },
 
-    // ---------- missions: procedural NPC board + completion engine ----------
-    _mDestBodies(excludeStationIdx){
-      const list = [];
-      for(let i = 0; i < window.STATIONS.length; i++){
-        if(i === excludeStationIdx) continue;
-        list.push({ kind: 'station', idx: i, name: window.STATIONS[i].name });
-      }
-      for(const i of [0, 1, 4]){ // market-bearing outposts
-        list.push({ kind: 'planet', idx: i, name: window.PLANETS[i].name });
-      }
-      return list;
-    },
-
     _genNpcs(){
       const PD = window.PD;
       const firsts = ['Ryn', 'Kova', 'Dax', 'Mira', 'Olek', 'Sela', 'Brann', 'Talia', 'Juno', 'Corr'];
@@ -602,7 +589,7 @@
           extra = mi.ambushCompleted ? ' — Ambush cleared' : ' — Ambush active';
         } else if(mi.type === 'defence' && mi.piratesGenerated){
           const alive = (window.Space && window.Space.pirates) ? window.Space.pirates.filter(p => p && p.missionId === mi.id).length : 0;
-          extra = ' — ' + (mi.need - alive) + '/' + mi.need + ' destroyed';
+          extra = ' — ' + (mi.have || 0) + '/' + (mi.need || 0) + ' destroyed';
         }
         this._row(m, mi.label, 'reward ' + mi.reward + ' CR · ' + prog + extra, '', 'ABANDON', () => {
           PD.missions.splice(i, 1);
@@ -622,25 +609,11 @@
       for(let i = PD.missions.length - 1; i >= 0; i--){
         const mi = PD.missions[i];
         if(mi.type === 'defence'){
-          // System Defence: complete when all mission pirates are destroyed
-          if(mi.piratesGenerated){
-            let allDestroyed = true;
-            for(const pir of mi.pirates){
-              const found = S.pirates.find(p => p && p.missionId === mi.id);
-              if(found){
-                allDestroyed = false;
-                break;
-              }
-            }
-            // Also check if any mission pirates are still alive
-            const aliveMissionPirates = S.pirates.filter(p => p && p.missionId === mi.id);
-            if(aliveMissionPirates.length > 0){
-              allDestroyed = false;
-            }
-            if(allDestroyed && mi.pirates.length > 0){
-              PD.credits += mi.reward;
-              this._missionDone(mi);
-            }
+          // System Defence: complete exactly once when the assigned kill counter
+          // reaches the requested group size. Only mission-assigned pirates increment it.
+          if((mi.have || 0) >= (mi.need || 0)){
+            PD.credits += mi.reward;
+            this._missionDone(mi);
           }
           continue;
         }
@@ -920,12 +893,90 @@
 
     _renderEquipment(m){
       const PD = window.PD;
+      // PLANETARY GEAR
+      const pg = document.createElement('div');
+      pg.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">PLANETARY GEAR</div>';
+      m.appendChild(pg);
       // medkit
       this._row(m, 'Medkit', 'heals 55 player health · you carry ' + window.PD.medkits, '60 CR', 'BUY', () => {
         if(window.PD.credits < 60) return;
         window.PD.credits -= 60; window.PD.medkits++; window.GameAudio.uiBuy(); window.PD.save(); this._renderStation();
       }, window.PD.credits < 60);
+      const stock = this._marketStock('station');
+      const laser = window.WEAPON_DEFS.laserpistol;
+      const laserOwned = PD.hasWeapon('laserpistol');
+      const laserInStock = (stock.weapons.laserpistol || 0) > 0;
+      if(laserOwned){
+        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'sell ' + Math.round(laser.cost * 0.6) + ' CR', 'SELL', () => {
+          const refund = PD.sellWeapon('laserpistol');
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold ' + laser.name + ' · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
+      } else if(laserInStock){
+        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', laser.cost + ' CR', 'BUY', () => {
+          if(PD.credits < laser.cost) return;
+          PD.credits -= laser.cost;
+          PD.weapons.push('laserpistol');
+          if(!PD.equippedWeapon) PD.equippedWeapon = 'laserpistol';
+          delete stock.weapons.laserpistol;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, laser.name, laser.desc + ' · dmg ' + laser.dmg + ' · delay ' + laser.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+      }
+      const rifle = window.WEAPON_DEFS.assaultrifle;
+      const rifleOwned = PD.hasWeapon('assaultrifle');
+      const rifleInStock = (stock.weapons.assaultrifle || 0) > 0;
+      if(rifleOwned){
+        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'sell ' + Math.round(rifle.cost * 0.6) + ' CR', 'SELL', () => {
+          const refund = PD.sellWeapon('assaultrifle');
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold ' + rifle.name + ' · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
+      } else if(rifleInStock){
+        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', rifle.cost + ' CR', 'BUY', () => {
+          if(PD.credits < rifle.cost) return;
+          PD.credits -= rifle.cost;
+          PD.weapons.push('assaultrifle');
+          if(!PD.equippedWeapon) PD.equippedWeapon = 'assaultrifle';
+          delete stock.weapons.assaultrifle;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, rifle.name, rifle.desc + ' · dmg ' + rifle.dmg + ' · delay ' + rifle.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
+      }
+      if(stock.energyCells > 0){
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
+          if(PD.credits < 25) return;
+          PD.credits -= 25;
+          PD.energyCells++;
+          stock.energyCells--;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
+      }
+      if(PD.energyCells > 0){
+        this._row(m, 'Sell Pulse Rounds', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
+          const refund = PD.sellEnergyCells(PD.energyCells);
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold energy cells · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
+      }
       // repair ship
+
       const missingHull = Math.ceil(PD.hullMax() - PD.hp);
       if(missingHull > 0){
         const repairCost = Math.ceil(missingHull * 2);
@@ -967,6 +1018,34 @@
             this._renderStation();
           }, false);
         }
+      }
+      // SHIP GEAR
+      const sg = document.createElement('div');
+      sg.innerHTML = '<div class="bar-label" style="margin:12px 0 6px">SHIP GEAR</div>';
+      m.appendChild(sg);
+      if(stock.missiles > 0){
+        this._row(m, 'Missiles', 'homing missile ammunition · ' + stock.missiles + ' in stock', '60 CR', 'BUY', () => {
+          if(PD.credits < 60) return;
+          PD.credits -= 60;
+          PD.missiles++;
+          stock.missiles--;
+          window.GameAudio.uiBuy();
+          window.PD.save();
+          this._renderStation();
+        }, false);
+      } else {
+        this._row(m, 'Missiles', 'homing missile ammunition · out of stock', '60 CR', '—', () => {}, true);
+      }
+      if(PD.missiles > 0){
+        this._row(m, 'Sell Missiles', 'sell all missiles · refund 25 CR each', PD.missiles + ' × 25 CR', 'SELL', () => {
+          const refund = PD.missiles * 25;
+          PD.credits += refund;
+          PD.missiles = 0;
+          window.GameAudio.coin();
+          window.PD.save();
+          this.uiToast('Sold missiles · +' + refund + ' CR');
+          this._renderStation();
+        }, false);
       }
       // ship upgrades
       const uh = document.createElement('div');
@@ -1120,91 +1199,6 @@
         wrap.appendChild(sellBtn);
         row.appendChild(wrap);
         m.appendChild(row);
-      }
-      // planetary gear: weapons and energy cells (station market)
-      const pg = document.createElement('div');
-      pg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">PLANETARY GEAR</div>';
-      m.appendChild(pg);
-      const stock = this._marketStock('station');
-      // energy cells
-      if(stock.energyCells > 0){
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · ' + stock.energyCells + ' in stock', '25 CR', 'BUY', () => {
-          if(PD.credits < 25) return;
-          PD.credits -= 25;
-          PD.energyCells++;
-          stock.energyCells--;
-          window.GameAudio.uiBuy();
-          window.PD.save();
-          this._renderStation();
-        }, false);
-      } else {
-        this._row(m, 'Pulse Rounds', 'ammo for ranged weapons · out of stock', '25 CR', '—', () => {}, true);
-      }
-      // sell energy cells
-      if(PD.energyCells > 0){
-        this._row(m, 'Sell Pulse Rounds', 'sell all ammo · refund 9 CR each', PD.energyCells + ' × 9 CR', 'SELL', () => {
-          const refund = PD.sellEnergyCells(PD.energyCells);
-          window.GameAudio.coin();
-          window.PD.save();
-          this.uiToast('Sold energy cells · +' + refund + ' CR');
-          this._renderStation();
-        }, false);
-      }
-      // ship gear: missiles (consumable ammunition)
-      const sg = document.createElement('div');
-      sg.innerHTML = '<div class="bar-label" style="margin:14px 0 6px">SHIP GEAR</div>';
-      m.appendChild(sg);
-      if(stock.missiles > 0){
-        this._row(m, 'Missiles', 'homing missile ammunition · ' + stock.missiles + ' in stock', '60 CR', 'BUY', () => {
-          if(PD.credits < 60) return;
-          PD.credits -= 60;
-          PD.missiles++;
-          stock.missiles--;
-          window.GameAudio.uiBuy();
-          window.PD.save();
-          this._renderStation();
-        }, false);
-      } else {
-        this._row(m, 'Missiles', 'homing missile ammunition · out of stock', '60 CR', '—', () => {}, true);
-      }
-      if(PD.missiles > 0){
-        this._row(m, 'Sell Missiles', 'sell all missiles · refund 25 CR each', PD.missiles + ' × 25 CR', 'SELL', () => {
-          const refund = PD.missiles * 25;
-          PD.credits += refund;
-          PD.missiles = 0;
-          window.GameAudio.coin();
-          window.PD.save();
-          this.uiToast('Sold missiles · +' + refund + ' CR');
-          this._renderStation();
-        }, false);
-      }
-      // weapons for sale / sell
-      for(const wk in window.WEAPON_DEFS){
-        const wd = window.WEAPON_DEFS[wk];
-        const owned = PD.hasWeapon(wk);
-        const inStock = stock.weapons[wk] > 0;
-        if(owned){
-          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', 'sell ' + Math.round(wd.cost * 0.6) + ' CR', 'SELL', () => {
-            const refund = PD.sellWeapon(wk);
-            window.GameAudio.coin();
-            window.PD.save();
-            this.uiToast('Sold ' + wd.name + ' · +' + refund + ' CR');
-            this._renderStation();
-          }, false);
-        } else if(inStock){
-          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', wd.cost + ' CR', 'BUY', () => {
-            if(PD.credits < wd.cost) return;
-            PD.credits -= wd.cost;
-            PD.weapons.push(wk);
-            if(!PD.equippedWeapon) PD.equippedWeapon = wk;
-            delete stock.weapons[wk];
-            window.GameAudio.uiBuy();
-            window.PD.save();
-            this._renderStation();
-          }, false);
-        } else {
-          this._row(m, wd.name, wd.desc + ' · dmg ' + wd.dmg + ' · delay ' + wd.delay.toFixed(2) + 's', 'not in stock', '—', () => {}, true);
-        }
       }
       const d = document.createElement('div');
       d.style.cssText = 'color:#8fc6d8;font-size:11px;text-align:center;margin-top:10px';

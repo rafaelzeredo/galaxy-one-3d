@@ -928,42 +928,33 @@
             }
           }
         } else if(mi.type === 'defence'){
-          // System Defence: 3-5 Void Raiders
-          const destSys = mi.destSystem != null ? mi.destSystem : null;
+          // System Defence: spawn and track exactly the requested mission group.
+          const destSys = mi.destSystem != null ? mi.destSystem : (mi.dest ? (mi.dest.kind === 'station' ? window.STATIONS[mi.dest.idx].sys : window.PLANETS[mi.dest.idx].sys) : null);
           if(destSys !== curSys) continue;
-          if(mi.piratesGenerated){
-            // Check how many mission pirates are still alive
-            const missionPirates = this.pirates.filter(p => p && p.missionId === mi.id);
-            const expectedCount = mi.need || 3;
-            if(missionPirates.length < expectedCount && (mi.have || 0) < expectedCount){
-              // Some pirates are missing - re-spawn the missing ones
-              const missing = expectedCount - missionPirates.length;
-              for(let i = 0; i < missing; i++){
-                const p = this._spawnPirate();
-                if(p){
-                  p.missionId = mi.id;
-                }
-              }
-              PD.save();
-            }
-          } else {
-            // First time spawning
-            const need = mi.need || 3;
-            for(let i = 0; i < need; i++){
-              const p = this._spawnPirate();
-              if(p){
-                p.missionId = mi.id;
-              }
-            }
-            mi.piratesGenerated = true;
-            PD.save();
+          const need = mi.need || 3;
+          const alive = this.pirates.filter(p => p && p.missionId === mi.id).length;
+          const remaining = Math.max(0, need - (mi.have || 0));
+          const missing = Math.max(0, remaining - alive);
+
+          // Retry transient spawn failures before accepting a partial group.
+          // The retry loop is bounded so a permanently failing spawn cannot hang arrival.
+          let spawned = 0;
+          let attempts = 0;
+          while(spawned < missing && attempts < Math.max(8, missing * 4)){
+            const p = this._spawnPirate(null, mi.id);
+            attempts++;
+            if(p) spawned++;
           }
+          if(spawned > 0) mi.piratesGenerated = true;
+          PD.save();
         }
       }
     },
 
-    _spawnPirate(typeKey){
-      if(this.pirates.length >= 4) return;
+    _spawnPirate(typeKey, missionId){
+      // Ambient encounters keep their original four-ship cap; mission-specific
+      // groups are allowed to exceed it so 3/4/5-ship defence contracts spawn.
+      if(!missionId && this.pirates.length >= 4) return;
       const type = (typeKey && PIRATE_TYPES.find(t => t.key === typeKey)) || this._pickPirateType();
       const grp = this._buildPirateModel(type).grp;
       // per-instance blink + engine lights (independent animation per raider)
@@ -986,6 +977,7 @@
       grp.position.copy(this.ship.position).addScaledVector(dir, 420);
       const p = { mesh: grp, type,
         id: 'pirate-' + this.pirates.length + '-' + Date.now(),
+        missionId: missionId || null,
         hp: type.hp[0] + Math.random() * (type.hp[1] - type.hp[0]),
         fireT: 1 + Math.random(), vel: V3(0,0,0), bank: 0, seed: Math.random() * 9,
         beacon, halo, tail, plight };
