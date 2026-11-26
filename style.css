@@ -71,6 +71,10 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;letter-spacing:1px}
 .menu-btn:hover{background:rgba(95,240,255,.28)}
 .menu-btn:disabled{opacity:.35;cursor:default}
+#eat-rations{background:rgba(95,240,255,.12);color:#eaffff;border:1px solid var(--cyan);border-radius:4px;
+  padding:5px 12px;font-size:12px;cursor:pointer;letter-spacing:1px;pointer-events:auto}
+#eat-rations:hover{background:rgba(95,240,255,.28)}
+#eat-rations:disabled{opacity:.35;cursor:default}
 .menu-close{display:block;margin:14px auto 0}
 .lvl{color:var(--violet);letter-spacing:2px;font-size:12px}
 

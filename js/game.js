@@ -102,6 +102,12 @@
       window.addEventListener('mousedown', e => { inp.mouseDown = true; });
       window.addEventListener('mouseup', e => { inp.mouseDown = false; });
       window.addEventListener('contextmenu', e => e.preventDefault());
+      const eatBtn = document.getElementById('eat-rations');
+      if(eatBtn){
+        eatBtn.setAttribute('tabindex', '-1');
+        eatBtn.addEventListener('mousedown', e => { if(e && e.preventDefault) e.preventDefault(); });
+        eatBtn.addEventListener('click', e => { if(e && e.preventDefault) e.preventDefault(); this.eatFood(); if(e && e.currentTarget && e.currentTarget.blur) e.currentTarget.blur(); });
+      }
     },
 
     // ---------- transitions ----------
@@ -227,9 +233,12 @@
       window.GameAudio.bigBoom();
       this._fade(() => {
         const PD = window.PD;
-        // Do NOT respawn on planet. Trigger Game Over.
-        // Save current state as checkpoint (preserving all progress)
+        // Save a playable checkpoint (preserve progress, never leave a dead/unplayable save).
+        PD.playerHp = Math.max(1, Math.round(PD.playerHpMax() * 0.5));
+        PD.alive = true;
         PD.save();
+        // Exit planetary mode so stale surface render state cannot leak across Continue.
+        if(window.Planet && window.Planet.active) window.Planet.exit();
         // Show Game Over screen
         this.state = 'gameover';
         this.els.gameover.classList.remove('hidden');
@@ -243,6 +252,9 @@
           btnContinue.disabled = !PD.hasSave();
           btnContinue.onclick = () => {
             PD.load();
+            PD.alive = true;
+            if(PD.playerHp <= 0) PD.playerHp = Math.max(1, Math.round(PD.playerHpMax() * 0.5));
+            if(window.Planet && window.Planet.active) window.Planet.exit();
             this.els.gameover.classList.add('hidden');
             this._toSpace(false);
             window.Space.syncWorld();
@@ -253,6 +265,7 @@
           btnNew.onclick = () => {
             PD.newGame();
             PD.save();
+            if(window.Planet && window.Planet.active) window.Planet.exit();
             this.els.gameover.classList.add('hidden');
             this._toSpace(true);
             window.Space.syncWorld();
@@ -1419,11 +1432,48 @@
       while(this.els.toasts.children.length > 4) this.els.toasts.firstChild.remove();
     },
 
+    // Food Rations: consume one ration via the HUD EAT RATION button or the [J] shortcut.
+    eatFood(){
+      if(this.state !== 'planet') return false;
+      const PD = window.PD;
+      const btn = document.getElementById('eat-rations');
+      const foodLeft = PD.foodCount() || 0;
+      if(btn) btn.disabled = foodLeft <= 0;
+      if(foodLeft <= 0){
+        this.uiToast('NO FOOD RATIONS');
+        return false;
+      }
+      if(PD.hunger >= PD.hungerMax()){
+        this.uiToast('HUNGER FULL');
+        return false;
+      }
+      if(PD.consumeFood()){
+        window.GameAudio.pickup();
+        this.uiToast('🍽 FOOD RATIONS · +HUNGER');
+        this._renderHudDom();
+        return true;
+      }
+      this.uiToast('NO FOOD RATIONS');
+      return false;
+    },
+
     _fmtCargo(){
       const PD = window.PD;
       const parts = [];
-      for(const k in window.PD.cargo) if(window.PD.cargo[k] > 0) parts.push(window.COMMS[k].name.split(' ')[0] + ' ×' + window.PD.cargo[k]);
-      for(const k in window.PD.trade) if(window.PD.trade[k] > 0) parts.push(window.TRADE_GOODS[k].name.split(' ')[0] + ' ×' + window.PD.trade[k]);
+      for(const k in PD.cargo){
+        const n = PD.cargo[k] | 0;
+        if(n <= 0) continue;
+        const def = (window.COMMS && window.COMMS[k]) || (window.TRADE_GOODS && window.TRADE_GOODS[k]);
+        const name = def ? def.name.split(' ')[0] : k;
+        parts.push(name + ' ×' + n);
+      }
+      for(const k in PD.trade){
+        const n = PD.trade[k] | 0;
+        if(n <= 0) continue;
+        const def = (window.TRADE_GOODS && window.TRADE_GOODS[k]) || (window.COMMS && window.COMMS[k]);
+        const name = def ? def.name.split(' ')[0] : k;
+        parts.push(name + ' ×' + n);
+      }
       return parts.length ? parts.join(' · ') : 'hold empty';
     },
 
@@ -1467,6 +1517,14 @@
             if(hungerTxt.parentElement) hungerTxt.parentElement.style.display = '';
             if(hungerBar.parentElement) hungerBar.parentElement.style.display = '';
           }
+          // food rations: EAT RATION action visibility + live count (planetary mode)
+          const eatWrap = document.getElementById('hud-food');
+          const eatBtn = document.getElementById('eat-rations');
+          const foodCountEl = document.getElementById('food-count');
+          const foodLeft = PD.foodCount() || 0;
+          if(eatWrap) eatWrap.style.display = '';
+          if(foodCountEl) foodCountEl.textContent = '×' + foodLeft;
+          if(eatBtn) eatBtn.disabled = foodLeft <= 0;
           // missiles are space-only; hide the counter row on planets
           const mslLabelP = document.getElementById('msl-label');
           if(mslLabelP) mslLabelP.style.display = 'none';
@@ -1497,6 +1555,8 @@
           const hungerBarS = document.getElementById('hunger-bar');
           if(hungerTxtS){ if(hungerTxtS.parentElement) hungerTxtS.parentElement.style.display = 'none'; }
           if(hungerBarS){ if(hungerBarS.parentElement) hungerBarS.parentElement.style.display = 'none'; }
+          const eatWrapS = document.getElementById('hud-food');
+          if(eatWrapS) eatWrapS.style.display = 'none';
           const thr = this.state === 'space' ? (window.Space.stats.thrust || 0) : 0;
           const spdTxt = document.getElementById('spd-txt');
           const spdBar = document.getElementById('spd-bar');

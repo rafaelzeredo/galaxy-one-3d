@@ -49,6 +49,8 @@
       this.active = true;
       this.interior = false; // interior state is per-landing / transition
       const PD = window.PD;
+      PD.alive = true;
+      if(PD.playerHp <= 0) PD.playerHp = Math.max(1, Math.round(PD.playerHpMax() * 0.5));
       this.planet = window.PLANETS[planetIdx];
       this.pal = PALETTES[PAL_IDX[planetIdx] || 'peaceful'];
       PD.planetIndex = planetIdx;
@@ -57,6 +59,12 @@
       if(!PD.surfaceStates) PD.surfaceStates = {};
       if(PD.surfaceStates[planetIdx]){
         this.state = PD.surfaceStates[planetIdx];
+        // A JSON save/load round-trip cannot carry canvas textures: when the
+        // persisted surface state lost its terrain texture, rebuild it from the
+        // planet's seed/palette instead of keeping the invalid value (crashed drawImage).
+        if(!this.state.tex || typeof this.state.tex.getContext !== 'function' || !this.state.tex.width){
+          this.state.tex = this._bakeSurfaceTexture(this.planet);
+        }
       } else {
         this.state = this._generate(this.planet, planetIdx);
         PD.surfaceStates[planetIdx] = this.state;
@@ -133,7 +141,10 @@
 
     exit(){ this.active = false; this.interior = false; },
 
-    _generate(def, idx){
+    // Bake the procedural planet surface texture (canvas) for a planet definition.
+    // Extracted from _generate so a save/load-restored surface state can rebuild a
+    // lost texture while preserving the rest of the gameplay state (nodes, outposts...).
+    _bakeSurfaceTexture(def){
       const rnd = mulberry32(def.seed * 7919);
       // ground texture
       const tex = document.createElement('canvas');
@@ -213,6 +224,12 @@
       c.strokeStyle = 'rgba(0,0,0,0.55)'; c.lineWidth = 90;
       c.strokeRect(-20, -20, WORLD + 40, WORLD + 40);
 
+      return tex;
+    },
+
+    _generate(def, idx){
+      const rnd = mulberry32(def.seed * 7919);
+      const tex = this._bakeSurfaceTexture(def);
       const nodes = [];
       const trees = [], rocks = [], crystals = [];
       const placed = [];
@@ -661,14 +678,9 @@
         return;
       }
       if(inp.pressed('KeyH')) this._useMedkit();
-      // Food Rations: consume to restore planetary hunger.
+      // Food Rations: consume to restore planetary hunger (shared with HUD button).
       if(inp.pressed('KeyJ')){
-        if(PD.consumeFood()){
-          window.GameAudio.pickup();
-          window.Game.uiToast('🍽 FOOD RATIONS · +HUNGER');
-        } else {
-          window.Game.uiToast('NO FOOD RATIONS');
-        }
+        G.eatFood();
       }
       if(inp.pressed('KeyE') && this._nearOutpost()){
         if(this.interior){
@@ -833,6 +845,9 @@
 
       ctx.save();
       ctx.translate(-ox + shx, -oy + shy);
+      if(!st.tex || typeof st.tex.getContext !== 'function' || !st.tex.width){
+        st.tex = this._bakeSurfaceTexture(this.planet);
+      }
       ctx.drawImage(st.tex, 0, 0);
 
       // drifting cloud shadows give the surface living atmosphere

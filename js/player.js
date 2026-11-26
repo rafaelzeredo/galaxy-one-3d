@@ -161,14 +161,11 @@
     consumeFood(){
       if(this.hunger >= this.hungerMax()) return false;
       if(this.foodCount() <= 0) return false;
-      const take = 35;
-      const fromCargo = Math.min(take, this.cargo.food | 0);
-      this.cargo.food = (this.cargo.food | 0) - fromCargo;
-      if(this.cargo.food < 0) this.cargo.food = 0;
-      const fromTrade = Math.min(take - fromCargo, this.trade.food | 0);
-      this.trade.food = (this.trade.food | 0) - fromTrade;
-      if(this.trade.food < 0) this.trade.food = 0;
-      this.hunger = Math.min(this.hungerMax(), this.hunger + take);
+      // Consume exactly one ration and restore the intended hunger amount.
+      if((this.cargo.food | 0) > 0) this.cargo.food = (this.cargo.food | 0) - 1;
+      else if((this.trade.food | 0) > 0) this.trade.food = (this.trade.food | 0) - 1;
+      else return false;
+      this.hunger = Math.min(this.hungerMax(), this.hunger + 35);
       return true;
     },
     applyCriticalHunger(dt){
@@ -389,7 +386,8 @@
         // and must continue to load into ORION REACH (index 0).
         const sys = s.systemIdx | 0;
         this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
-        this.playerHp = s.playerHp != null ? s.playerHp : this.playerHpMax();
+        this.playerHp = s.playerHp != null ? Math.max(1, Math.min(this.playerHpMax(), s.playerHp | 0)) : this.playerHpMax();
+        this.alive = true;
         this.hunger = s.hunger != null ? Math.max(0, Math.min(this.hungerMax(), s.hunger | 0)) : this.hunger;
         if(Array.isArray(s.weapons)) this.weapons = s.weapons.filter(k => WEAPON_DEFS[k]);
         this.equippedWeapon = s.equippedWeapon != null && this.hasWeapon(s.equippedWeapon) ? s.equippedWeapon : null;
