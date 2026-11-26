@@ -5,6 +5,10 @@
 
   // Aiming spread (radians) applied when the player is running.
   const MOVEMENT_SPREAD = 0.06;
+  const OUTPOST_COST_WOOD = 20;
+  const OUTPOST_COST_IRON = 30;
+  const OUTPOST_W = 44;
+  const OUTPOST_H = 36;
 
   function mulberry32(a){
     return function(){
@@ -37,11 +41,13 @@
     fx: [], walkT: 0, moving: false, fireFlash: 0,
     recoil: 0,          // current weapon recoil (0 = fully recovered)
     enterFlash: 0, cloudShadows: [], motes: [],
+    interior: false,   // inside constructed outpost
 
     init(ctx){ this.ctx = ctx; },
 
     enter(planetIdx){
       this.active = true;
+      this.interior = false; // interior state is per-landing / transition
       const PD = window.PD;
       this.planet = window.PLANETS[planetIdx];
       this.pal = PALETTES[PAL_IDX[planetIdx] || 'peaceful'];
@@ -55,6 +61,7 @@
         this.state = this._generate(this.planet, planetIdx);
         PD.surfaceStates[planetIdx] = this.state;
       }
+      this.state.interior = false; // per-landing transition state
       // park the ship
       if(!this.state.ship){
         this.state.ship = { x: WORLD/2, y: WORLD/2 + 130 };
@@ -124,7 +131,7 @@
       window.Game.uiToast('LANDED — ' + this.planet.name);
     },
 
-    exit(){ this.active = false; },
+    exit(){ this.active = false; this.interior = false; },
 
     _generate(def, idx){
       const rnd = mulberry32(def.seed * 7919);
@@ -261,6 +268,57 @@
       return Math.hypot(this.player.x - this.state.ship.x, this.player.y - this.state.ship.y) < 70;
     },
 
+    _nearOutpost(){
+      if(!this.state) return null;
+      const outs = Array.isArray(this.state.outposts) ? this.state.outposts : [];
+      const p = this.player;
+      if(this.interior){
+        for(const o of outs){
+          if(!o || Math.hypot(o.x - p.x, o.y - p.y) < Math.max(o.w, o.h) / 2 + 10) return o;
+        }
+        return null;
+      }
+      for(const o of outs){
+        if(!o) continue;
+        if(Math.hypot(o.x - p.x, o.y - p.y) < Math.max(o.w, o.h) / 2 + 70) return o;
+      }
+      return null;
+    },
+
+    canConstructOutpost(){
+      if(this.state && Array.isArray(this.state.outposts) && this.state.outposts.length) return false;
+      const PD = window.PD;
+      const wood = PD.cargo.wood | 0;
+      const iron = PD.cargo.ore | 0;
+      const costOk = wood >= OUTPOST_COST_WOOD && iron >= OUTPOST_COST_IRON;
+      const nearTrader = this.state && this.state.trader &&
+        Math.hypot(this.state.trader.x - this.player.x, this.state.trader.y - this.player.y) < 70;
+      if(nearTrader) return false;
+      if(!costOk) return false;
+      const o = { x: this.player.x, y: this.player.y };
+      return o.x > 40 && o.x < WORLD - 40 && o.y > 40 && o.y < WORLD - 40;
+    },
+
+    constructOutpost(){
+      const PD = window.PD;
+      if(!this.state) return false;
+      if(Array.isArray(this.state.outposts) && this.state.outposts.length) return false;
+      const wood = PD.cargo.wood | 0;
+      const iron = PD.cargo.ore | 0;
+      if(wood < OUTPOST_COST_WOOD || iron < OUTPOST_COST_IRON){
+        window.Game.uiToast('✖ OUTPOST REQUIRES ' + OUTPOST_COST_WOOD + ' WOOD · ' + OUTPOST_COST_IRON + ' IRON');
+        return false;
+      }
+      PD.cargo.wood = (PD.cargo.wood | 0) - OUTPOST_COST_WOOD;
+      PD.cargo.ore = (PD.cargo.ore | 0) - OUTPOST_COST_IRON;
+      if(!Array.isArray(this.state.outposts)) this.state.outposts = [];
+      this.state.outposts.push({ x: this.player.x, y: this.player.y, w: OUTPOST_W, h: OUTPOST_H, built: true });
+      this.state.interior = true;
+      PD.save();
+      window.Game.uiToast('⛺ OUTPOST CONSTRUCTED');
+      return true;
+    },
+
     // Alien population management (Step 1 Update): baseline pack size scales with
     // the planet's hostility; the cap bounds long-run populations.
     alienBaseline(){
@@ -317,6 +375,12 @@
       if(!this.active) return;
       const G = window.Game, PD = window.PD, inp = G.input;
       const p = this.player;
+
+      // planetary hunger: gradual drain while exploring, sheltered indoors
+      if(!this.interior){
+        PD.hungerDeplete(dt);
+        PD.applyCriticalHunger(dt);
+      }
 
       // movement
       let dx = 0, dy = 0;
@@ -533,6 +597,25 @@
           target = node;
         }
       }
+      const _out = this._nearOutpost();
+      if(_out){
+        this.prompt = this.interior
+          ? 'Press <b>E</b> to <b>exit</b> the Outpost'
+          : 'Press <b>E</b> to <b>enter</b> the Outpost';
+      } else {
+        const _pdCr = window.PD.crashRecovery;
+        const _inCrash = _pdCr && _pdCr.active && _pdCr.planetIdx === window.PD.planetIndex;
+        if(!_inCrash){
+          const PD = window.PD;
+          const _wood = PD.cargo.wood | 0;
+          const _iron = PD.cargo.ore | 0;
+          if(this.canConstructOutpost()){
+            prompt = 'Press <b>E</b> to <b>construct</b> Outpost (' + OUTPOST_COST_WOOD + ' <b>Wood</b> · ' + OUTPOST_COST_IRON + ' <b>Iron</b>)';
+          } else if(_wood < OUTPOST_COST_WOOD || _iron < OUTPOST_COST_IRON){
+            prompt = 'Outpost requires ' + OUTPOST_COST_WOOD + ' Wood · ' + OUTPOST_COST_IRON + ' Iron — gather resources';
+          }
+        }
+      }
       if(this.isNearShip()){
         prompt = 'Press <b>R</b> to <b>take off</b>' + (prompt ? ' · ' + prompt.replace(/<\/?b>/g, '') : '');
       }
@@ -578,6 +661,33 @@
         return;
       }
       if(inp.pressed('KeyH')) this._useMedkit();
+      // Food Rations: consume to restore planetary hunger.
+      if(inp.pressed('KeyJ')){
+        if(PD.consumeFood()){
+          window.GameAudio.pickup();
+          window.Game.uiToast('🍽 FOOD RATIONS · +HUNGER');
+        } else {
+          window.Game.uiToast('NO FOOD RATIONS');
+        }
+      }
+      if(inp.pressed('KeyE') && this._nearOutpost()){
+        if(this.interior){
+          this.interior = false;
+          this.state.interior = false;
+          window.Game.uiToast('OUTPOST EXITED');
+        } else if(this.constructOutpost()){
+          this.interior = true;
+        }
+      } else if(inp.pressed('KeyE')){
+        // No Outpost on this landing yet: E constructs one where permitted.
+        const _pdCr2 = window.PD.crashRecovery;
+        const _inCrash2 = _pdCr2 && _pdCr2.active && _pdCr2.planetIdx === window.PD.planetIndex;
+        if(!_inCrash2 && this.canConstructOutpost()){
+          if(this.constructOutpost()){
+            this.interior = true;
+          }
+        }
+      }
       if(inp.pressed('KeyE') && target && kind === 'trader'){
         window.Game.openTrade();
       }
@@ -852,6 +962,45 @@
         ctx.beginPath();
         ctx.moveTo(c.x, c.y - 12); ctx.lineTo(c.x + 6, c.y); ctx.lineTo(c.x, c.y);
         ctx.closePath(); ctx.fill();
+      }
+
+      // constructed outposts: exterior shelter (or interior when entered)
+      const _outs = Array.isArray(st.outposts) ? st.outposts : [];
+      for(const o of _outs){
+        if(!o) continue;
+        if(o.x < ox - 80 || o.x > ox + vw + 80 || o.y < oy - 80 || o.y > oy + vh + 80) continue;
+        const ow = o.w || OUTPOST_W, oh = o.h || OUTPOST_H;
+        if(this.interior){
+          // inside: hide roof/exterior walls, draw the shelter's interior
+          ctx.fillStyle = '#232c48';
+          ctx.fillRect(o.x, o.y, ow, oh);
+          ctx.fillStyle = '#1c2440';
+          ctx.fillRect(o.x, o.y, ow, 8);
+          ctx.fillStyle = '#5d6fa8';
+          ctx.fillRect(o.x - 4, o.y + 10, 12, oh - 14);
+          ctx.fillRect(o.x + ow - 8, o.y + 10, 12, oh - 14);
+          ctx.fillStyle = '#c9a35f';
+          ctx.fillRect(o.x + ow / 2 - 10, o.y + oh - 16, 20, 16);
+          ctx.fillStyle = '#5ff0ff';
+          ctx.fillRect(o.x + ow / 2 - 6, o.y + oh - 12, 12, 8);
+          continue;
+        }
+        // exterior: base, walls and gabled roof + door
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath(); ctx.ellipse(o.x + ow / 2, o.y + oh / 2 + 7, ow / 2, oh / 2 * 0.8, 0, 0, 6.283); ctx.fill();
+        ctx.fillStyle = '#2a3450';
+        ctx.fillRect(o.x - 4, o.y - 4, ow + 8, oh + 8);
+        ctx.fillStyle = '#3d4f7a';
+        ctx.fillRect(o.x, o.y, ow, oh);
+        ctx.fillStyle = '#8a5a3a';
+        ctx.fillRect(o.x - 6, o.y - 10, ow + 12, 10);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(o.x + ow / 2 - 7, o.y + oh - 14, 14, 14);
+        ctx.fillStyle = '#ffd479';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⛺ OUTPOST', o.x + ow / 2, o.y - 16);
+        ctx.textAlign = 'left';
       }
 
       // trader outpost (tent + striped awning + crates)

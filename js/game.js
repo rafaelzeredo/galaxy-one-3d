@@ -1457,6 +1457,16 @@
           if(shLabel){ shLabel.style.display = 'none'; if(shLabel.nextElementSibling) shLabel.nextElementSibling.style.display = 'none'; }
           const spdLabel = document.getElementById('spd-txt')?.parentElement;
           if(spdLabel){ spdLabel.style.display = 'none'; if(spdLabel.nextElementSibling) spdLabel.nextElementSibling.style.display = 'none'; }
+          // hunger meter (planetary survival)
+          const hungerTxt = document.getElementById('hunger-txt');
+          const hungerBar = document.getElementById('hunger-bar');
+          if(hungerTxt && hungerBar){
+            const h = PD.hunger;
+            hungerTxt.textContent = 'HUNGER ' + Math.ceil(h) + '/' + PD.hungerMax();
+            hungerBar.style.width = (100 * h / PD.hungerMax()) + '%';
+            if(hungerTxt.parentElement) hungerTxt.parentElement.style.display = '';
+            if(hungerBar.parentElement) hungerBar.parentElement.style.display = '';
+          }
           // missiles are space-only; hide the counter row on planets
           const mslLabelP = document.getElementById('msl-label');
           if(mslLabelP) mslLabelP.style.display = 'none';
@@ -1482,6 +1492,11 @@
           const shBar = document.getElementById('sh-bar');
           if(shTxt) shTxt.textContent = sm ? Math.ceil(window.PD.shield) + '/' + sm : '—';
           if(shBar) shBar.style.width = sm ? (100 * window.PD.shield / sm) + '%' : '0%';
+          // hunger is planetary-only; hide it while in space
+          const hungerTxtS = document.getElementById('hunger-txt');
+          const hungerBarS = document.getElementById('hunger-bar');
+          if(hungerTxtS){ if(hungerTxtS.parentElement) hungerTxtS.parentElement.style.display = 'none'; }
+          if(hungerBarS){ if(hungerBarS.parentElement) hungerBarS.parentElement.style.display = 'none'; }
           const thr = this.state === 'space' ? (window.Space.stats.thrust || 0) : 0;
           const spdTxt = document.getElementById('spd-txt');
           const spdBar = document.getElementById('spd-bar');

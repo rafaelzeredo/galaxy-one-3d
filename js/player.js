@@ -132,6 +132,7 @@
     planetIndex: 0,
     systemIdx: 0,               // active star system (index into SYSTEMS)
     playerHp: 100,              // player health on planetary surface (separate from ship hp)
+    hunger: 100,                 // planetary hunger (0..hungerMax)
     weapons: [],                // owned planetary weapon keys
     equippedWeapon: null,       // currently equipped weapon key
     energyCells: 0,             // shared ammunition for ranged weapons
@@ -145,6 +146,40 @@
     // modules and shield regeneration. Alien attacks reduce playerHp, never
     // ship Hull or Shield.
     playerHpMax(){ return 100; },
+    hungerMax(){ return 100; },
+    hungerDepleteRate(){ return 0.4; }, // hunger units per second while exploring
+    hungerCriticalAt(){ return 20; }, // critical threshold
+    hungerDamageRate(){ return 2; },  // player-health per second while critical
+    hungerDeplete(dt){
+      this.hunger = Math.max(0, this.hunger - this.hungerDepleteRate() * (dt || 0));
+      if(this.hunger <= 0) this.hunger = 0;
+      return this.hunger;
+    },
+    foodCount(){
+      return (this.cargo.food | 0) + (this.trade.food | 0);
+    },
+    consumeFood(){
+      if(this.hunger >= this.hungerMax()) return false;
+      if(this.foodCount() <= 0) return false;
+      const take = 35;
+      const fromCargo = Math.min(take, this.cargo.food | 0);
+      this.cargo.food = (this.cargo.food | 0) - fromCargo;
+      if(this.cargo.food < 0) this.cargo.food = 0;
+      const fromTrade = Math.min(take - fromCargo, this.trade.food | 0);
+      this.trade.food = (this.trade.food | 0) - fromTrade;
+      if(this.trade.food < 0) this.trade.food = 0;
+      this.hunger = Math.min(this.hungerMax(), this.hunger + take);
+      return true;
+    },
+    applyCriticalHunger(dt){
+      // Critical hunger bleeds player health gradually; eating restores hunger and stops the bleed.
+      if(this.hunger > this.hungerCriticalAt()) return;
+      const d = dt || 0;
+      const before = this.playerHp;
+      this.playerHp = Math.max(0, this.playerHp - this.hungerDamageRate() * d);
+      if(before > 0 && this.playerHp <= 0 && this.alive) this.alive = false;
+      return this.playerHp;
+    },
     laserDmg(){ return 8 + this.up.weapon * 6; },
     fireDelay(){ return Math.max(0.09, 0.3 - this.up.weapon * 0.04); },
     thrust(){ return 34 + this.up.engine * 16; },
@@ -325,6 +360,7 @@
           missionsDone: this.missionsDone,
           systemIdx: this.systemIdx,
           playerHp: this.playerHp,
+          hunger: this.hunger,
           weapons: this.weapons,
           equippedWeapon: this.equippedWeapon,
           energyCells: this.energyCells,
@@ -354,6 +390,7 @@
         const sys = s.systemIdx | 0;
         this.systemIdx = (sys >= 0 && sys < SYSTEMS.length) ? sys : 0;
         this.playerHp = s.playerHp != null ? s.playerHp : this.playerHpMax();
+        this.hunger = s.hunger != null ? Math.max(0, Math.min(this.hungerMax(), s.hunger | 0)) : this.hunger;
         if(Array.isArray(s.weapons)) this.weapons = s.weapons.filter(k => WEAPON_DEFS[k]);
         this.equippedWeapon = s.equippedWeapon != null && this.hasWeapon(s.equippedWeapon) ? s.equippedWeapon : null;
         this.energyCells = s.energyCells != null ? s.energyCells | 0 : 0;
@@ -391,6 +428,7 @@
       this.planetIndex = 0;
       this.systemIdx = 0;
       this.playerHp = 100;
+      this.hunger = this.hungerMax();
       this.weapons = [];
       this.equippedWeapon = null;
       this.energyCells = 0;

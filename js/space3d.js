@@ -812,25 +812,42 @@
       const fwd = V3(0, 0, -1).applyQuaternion(this.ship.quaternion);
       const right = V3(1, 0, 0).applyQuaternion(this.ship.quaternion);
       const mesh = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 8),
-        new THREE.MeshStandardMaterial({ color: 0xff8a3d, metalness: 0.6, roughness: 0.3, emissive: 0x552200 }));
-      body.rotation.x = Math.PI / 2;
-      mesh.add(body);
-      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 8),
-        new THREE.MeshStandardMaterial({ color: 0xffcc66, emissive: 0x663300 }));
-      nose.rotation.x = -Math.PI / 2;
-      nose.position.z = -2.7;
+      mesh.name = 'homing-missile';
+      // elongated body: tapered nose + cylindrical mid + tail fin anchor
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffcc66, metalness: 0.65, roughness: 0.25, emissive: 0x663300 }));
+      nose.position.set(0, 0, -2.4);
       mesh.add(nose);
-      const exhaust = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.6, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: 0.85 }));
-      exhaust.rotation.x = Math.PI / 2;
-      exhaust.position.z = 2.8;
-      mesh.add(exhaust);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 3.4, 10),
+        new THREE.MeshStandardMaterial({ color: 0xff8a3d, metalness: 0.7, roughness: 0.3, emissive: 0x552200 }));
+      body.position.set(0, 0, 0.9);
+      mesh.add(body);
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.8, 8),
+        new THREE.MeshStandardMaterial({ color: 0x9a5a2a, metalness: 0.75, roughness: 0.35 }));
+      tail.position.set(0, 0, 2.1);
+      mesh.add(tail);
+      const finGeo = new THREE.PlaneGeometry(2.3, 1.7);
+      const finMat = new THREE.MeshStandardMaterial({ color: 0xd96a2a, metalness: 0.6, roughness: 0.4, side: THREE.DoubleSide });
+      const finL = new THREE.Mesh(finGeo, finMat);
+      finL.position.set(0, -0.9, 1.6); finL.rotation.x = Math.PI / 2; mesh.add(finL);
+      const finR = new THREE.Mesh(finGeo, finMat);
+      finR.position.set(0, 0.9, 1.6); finR.rotation.x = Math.PI / 2; mesh.add(finR);
+      const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.64, 1.4, 10),
+        new THREE.MeshBasicMaterial({ color: 0xffd479 }));
+      stripe.position.set(0, 0, -0.3); mesh.add(stripe);
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff6a3d, transparent: true, opacity: 0.9, depthWrite: false }));
+      flame.name = 'missile-flame';
+      flame.position.set(0, 0, 3.4); mesh.add(flame);
+      const trailGeo = new THREE.BufferGeometry().setFromPoints([mesh.position, mesh.position.clone().set(0, 0, 6)]);
+      const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.75, depthWrite: false }));
+      trail.name = 'missile-trail'; mesh.add(trail);
       mesh.position.copy(this.ship.position).addScaledVector(right, this.wing ? -2.0 : 2.0).addScaledVector(fwd, 3);
       mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), fwd);
       const vel = fwd.clone().multiplyScalar(180);
-      this.missiles3d.push({ mesh, vel, target: (target && this.pirates.includes(target)) ? target : null,
-        life: 4.0, hit: false, trail: [], prev: mesh.position.clone() });
+      const ms = { mesh, vel, target: (target && this.pirates.includes(target)) ? target : null,
+        life: 4.0, hit: false, trail: [], prev: mesh.position.clone(), trailLine: trail };
+      this.missiles3d.push(ms);
       this.scene.add(mesh);
       window.GameAudio.laser();
     },
@@ -1516,6 +1533,12 @@
         const mp1 = ms.mesh.position;
         ms.prev = mp1.clone();
         ms.mesh.quaternion.setFromUnitVectors(V3(0, 0, -1), ms.vel.clone().normalize());
+        // visible propulsion flame + trailing smoke while the missile is under power
+        const flame = ms.mesh.children.find(c => c.name === 'missile-flame');
+        if(flame) flame.material.opacity = 0.55 + 0.2 * Math.sin(ms.life * 12);
+        const back = V3(0, 0, 1).applyQuaternion(ms.mesh.quaternion);
+        ms.trailLine.geometry.setFromPoints([ms.mesh.position, ms.mesh.position.clone().add(back.multiplyScalar(7))]);
+
         if(ms.life <= 0){ this.scene.remove(ms.mesh); this.missiles3d.splice(i, 1); continue; }
         // collisions
         let hit = false;
